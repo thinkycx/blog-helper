@@ -1,0 +1,16 @@
+# Build artifacts
+dist/
+server
+
+# Data
+data/
+
+# Docs (keep local only)
+docs/
+
+# OS files
+.DS_Store
+
+# IDE
+.idea/
+.vscode/

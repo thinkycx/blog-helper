@@ -134,13 +134,14 @@ class DevHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
         if not args:
             return
-        parts = args[0].split() if args else []
+        msg = str(args[0])
+        parts = msg.split()
         path = parts[1] if len(parts) > 1 else ""
         if path.startswith("/api/"):
             tag = "\033[36m PROXY\033[0m"
         else:
             tag = "\033[90m STATIC\033[0m"
-        sys.stderr.write(f"  {tag}  {args[0]}\n")
+        sys.stderr.write(f"  {tag}  {fmt % args}\n")
 
 
 def copy_sdk_if_needed():

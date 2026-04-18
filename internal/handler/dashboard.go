@@ -285,8 +285,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
 
   // API + cache (switching tabs/periods uses cache; Refresh clears it)
   var _cache={};
-  function api(p){ return fetch("/api/v1/"+p).then(function(r){return r.json();}).then(function(j){
+  function api(p,retry){ return fetch("/api/v1/"+p).then(function(r){return r.json();}).then(function(j){
     if(j.ok) return j.data; throw new Error(j.error?j.error.message:"Error");
+  }).catch(function(e){
+    if(!retry) return api(p,true); // one retry on transient failure
+    throw e;
   }); }
   function capi(p){
     if(_cache[p]!==undefined) return Promise.resolve(_cache[p]);
@@ -339,6 +342,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
   }
 
   // ── Loaders ──
+  var _loaded=false; // first load shows "Loading...", subsequent refreshes keep content
   function syncLabels(){
     var lbl=pLabel(S.period);
     $("lbl-pv").textContent="Total PV ("+lbl+")";
@@ -373,7 +377,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
 
   function loadTrend(){
     var el=$("d-trend");
-    el.innerHTML='<div class="ld">Loading...</div>';
+    if(!_loaded) el.innerHTML='<div class="ld">Loading...</div>';
     tabs("trend-tabs",[{t:"1h",v:"1h"},{t:"6h",v:"6h"},{t:"1d",v:"1d"},{t:"7d",v:"7d"},{t:"30d",v:"30d"},{t:"90d",v:"90d"},{t:"180d",v:"180d"},{t:"1y",v:"365d"}],S.period,function(v){S.period=v;syncURL();syncLabels();loadStats();loadTrend();loadRef();loadPlat();loadPop();loadVis();loadViews();});
     var q={period:S.period,site_id:S.site}; if(S.slug)q.slug=S.slug;
     capi("analytics/trend?"+qs(q)).then(function(data){
@@ -425,7 +429,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
 
   function loadRef(){
     var el=$("d-ref");
-    el.innerHTML='<div class="ld">Loading...</div>';
+    if(!_loaded) el.innerHTML='<div class="ld">Loading...</div>';
     var q={days:pDays(S.period),limit:10,site_id:S.site}; if(S.slug)q.slug=S.slug;
     capi("analytics/referrers?"+qs(q)).then(function(data){
       if(!data||!data.length){el.innerHTML='<div class="emp">No referrers</div>';return;}
@@ -442,7 +446,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
   function loadPop(){
     tabs("pop-tabs",[{t:"10",v:10},{t:"20",v:20},{t:"30",v:30},{t:"50",v:50}],S.popN,function(v){S.popN=v;loadPop();});
     var el=$("d-pop");
-    el.innerHTML='<div class="ld">Loading...</div>';
+    if(!_loaded) el.innerHTML='<div class="ld">Loading...</div>';
     capi("analytics/popular?"+qs({limit:S.popN,period:pPopPeriod(S.period),site_id:S.site})).then(function(data){
       if(!data||!data.length){el.innerHTML='<div class="emp">No articles</div>';return;}
       var out="";
@@ -458,7 +462,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
   var platColors={"Windows":"#0078d4","macOS":"#555","Linux":"#e95420","Android":"#3ddc84","iOS":"#007aff","Other":"#aaa"};
   var platIcons={"Windows":"\u{1F5A5}","macOS":"\u{1F34E}","Linux":"\u{1F427}","Android":"\u{1F4F1}","iOS":"\u{1F4F1}","Other":"\u{2753}"};
   function loadPlat(){
-    var el=$("d-plat"); el.innerHTML='<div class="ld">Loading...</div>';
+    var el=$("d-plat"); if(!_loaded) el.innerHTML='<div class="ld">Loading...</div>';
     capi("analytics/platforms?"+qs({days:pDays(S.period),site_id:S.site})).then(function(data){
       if(!data||!data.length){el.innerHTML='<div class="emp">No data</div>';return;}
       var total=0; for(var i=0;i<data.length;i++) total+=data[i].count;
@@ -478,7 +482,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
 
   function loadVis(){
     var el=$("d-vis");
-    el.innerHTML='<div class="ld">Loading...</div>';
+    if(!_loaded) el.innerHTML='<div class="ld">Loading...</div>';
     if(S.fp){
       api("analytics/visitor?"+qs({fingerprint:S.fp,days:pDays(S.period),limit:S.rLim,offset:S.rOff,site_id:S.site})).then(function(d){
         if(!d||!d.records||!d.records.length){el.innerHTML='<div class="emp">No records</div>';return;}
@@ -514,7 +518,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
 
   function loadViews(){
     var el=$("d-views");
-    el.innerHTML='<div class="ld">Loading...</div>';
+    if(!_loaded) el.innerHTML='<div class="ld">Loading...</div>';
     var q={days:pDays(S.period),limit:S.vLim,offset:S.vOff,site_id:S.site}; if(S.slug)q.slug=S.slug;
     api("analytics/views?"+qs(q)).then(function(d){
       if(!d||!d.records||!d.records.length){el.innerHTML='<div class="emp">No records</div>';return;}
@@ -553,6 +557,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
     syncURL(); syncTag();
     loadStats(); loadTrend(); loadRef(); loadPlat(); loadPop(); loadVis(); loadViews();
     $("ts").textContent=new Date().toLocaleTimeString();
+    _loaded=true;
   };
 
   // ── Auto-refresh ──

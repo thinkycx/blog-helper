@@ -69,7 +69,7 @@ type SQLiteStore struct {
 // NewSQLiteStore opens or creates a SQLite database and runs migrations.
 func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 	// Enable WAL mode and other pragmas for better concurrent read performance
-	dsn := fmt.Sprintf("%s?_pragma=journal_mode(wal)&_pragma=busy_timeout(5000)&_pragma=synchronous(normal)&_pragma=foreign_keys(on)", dbPath)
+	dsn := fmt.Sprintf("%s?_pragma=journal_mode(wal)&_pragma=busy_timeout(10000)&_pragma=synchronous(normal)&_pragma=foreign_keys(on)", dbPath)
 
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {

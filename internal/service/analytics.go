@@ -213,7 +213,6 @@ func (s *AnalyticsService) GetTopReferrers(ctx context.Context, siteID string, d
 // normalizeSlug cleans up a page slug for consistent storage.
 func normalizeSlug(slug string) string {
 	slug = strings.TrimSpace(slug)
-	slug = strings.ToLower(slug)
 	// Strip trailing slashes (but keep root "/")
 	for len(slug) > 1 && strings.HasSuffix(slug, "/") {
 		slug = slug[:len(slug)-1]

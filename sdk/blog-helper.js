@@ -317,7 +317,6 @@
 
   function normalizeSlug(path) {
     path = path.replace(/\/+$/, "") || "/";
-    path = path.toLowerCase();
     return path;
   }
 

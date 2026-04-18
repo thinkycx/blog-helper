@@ -187,6 +187,18 @@ func (s *AnalyticsService) SearchVisitor(ctx context.Context, siteID, fingerprin
 	return s.store.SearchVisitor(ctx, normalizeSiteID(siteID), fingerprint, days, limit, offset)
 }
 
+// GetPeriodSummary returns total PV and deduplicated UV for a period.
+func (s *AnalyticsService) GetPeriodSummary(ctx context.Context, siteID, slug string, days int) (int64, int64, error) {
+	normalizedSlug := ""
+	if slug != "" {
+		normalizedSlug = normalizeSlug(slug)
+	}
+	if days < 0 {
+		days = 0
+	}
+	return s.store.GetPeriodSummary(ctx, normalizeSiteID(siteID), normalizedSlug, days)
+}
+
 // GetTopReferrers returns the top N referrer domains within the last N days.
 func (s *AnalyticsService) GetTopReferrers(ctx context.Context, siteID string, days int, limit int) ([]*model.ReferrerStat, error) {
 	if days <= 0 || days > 365 {

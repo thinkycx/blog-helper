@@ -47,7 +47,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
 .btn-s{padding:5px 14px;font-size:12px;border-radius:5px}
 .btn-g{background:transparent;color:var(--muted);border:1px solid var(--border)}
 .btn-g.on,.btn-g:hover{color:var(--accent);border-color:var(--accent);background:var(--accent-bg)}
-.ts{color:var(--muted);font-size:10px}
+.ts{color:var(--muted);font-size:13px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
 
 /* ── Layout ── */
 .dash{max-width:1360px;margin:0 auto;padding:16px 20px}
@@ -159,6 +159,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
 <body>
 <div class="hdr">
   <h1>Blog Analytics</h1>
+  <span class="ts" id="ts" style="margin-left:2px"></span>
   <div class="hdr-r">
     <input type="text" id="i-site" class="inp inp-s" placeholder="site_id" title="Site ID">
     <input type="text" id="i-slug" class="inp inp-f" placeholder="Filter article..." title="Filter by slug or title">
@@ -172,7 +173,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
       <option value="300">5min</option>
       <option value="3600">1h</option>
     </select>
-    <span class="ts" id="ts"></span>
   </div>
 </div>
 
@@ -181,7 +181,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
   <div class="row row-stats">
     <div class="c c-stat" id="c-active"><div class="c-h"><span class="c-t">Active Visitors</span></div><div id="d-active" class="ld">-</div></div>
     <div class="c c-stat" id="c-totalpv"><div class="c-h"><span class="c-t" id="lbl-pv">Total PV</span></div><div id="d-totalpv" class="ld">-</div></div>
-    <div class="c c-stat" id="c-totaluv"><div class="c-h"><span class="c-t" id="lbl-uv">Total UV</span></div><div id="d-totaluv" class="ld">-</div></div>
+    <div class="c c-stat" id="c-totaluv"><div class="c-h"><span class="c-t" id="lbl-uv" title="UV = COUNT(DISTINCT fingerprint). Visitors without fingerprint are counted as 1.">Total UV</span></div><div id="d-totaluv" class="ld">-</div></div>
     <div class="c c-stat" id="c-health"><div class="c-h"><span class="c-t">Uptime</span></div><div id="d-health" class="ld">-</div></div>
   </div>
 
@@ -350,13 +350,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
     $("lbl-plat").textContent="Platforms ("+lbl+")";
   }
 
-  // Update PV/UV stat cards from trend data (called by loadTrend, no extra API call)
-  function updatePVUV(data){
-    var pv=$("d-totalpv"), uv=$("d-totaluv");
-    if(!data||!data.length){ pv.innerHTML='-'; uv.innerHTML='-'; return; }
-    var tp=0,tu=0; for(var i=0;i<data.length;i++){tp+=data[i].pv;tu+=data[i].uv;}
-    pv.className=""; pv.innerHTML='<div class="stat-row"><span class="stat-v">'+num(tp)+'</span><span class="stat-l">page views</span></div>';
-    uv.className=""; uv.innerHTML='<div class="stat-row"><span class="stat-v">'+num(tu)+'</span><span class="stat-l">unique visitors</span></div>';
+  function loadSummary(){
+    var q={days:pDays(S.period),site_id:S.site}; if(S.slug)q.slug=S.slug;
+    capi("analytics/summary?"+qs(q)).then(function(d){
+      var pv=$("d-totalpv"), uv=$("d-totaluv");
+      pv.className=""; pv.innerHTML='<div class="stat-row"><span class="stat-v">'+num(d.pv)+'</span><span class="stat-l">page views</span></div>';
+      uv.className=""; uv.innerHTML='<div class="stat-row"><span class="stat-v">'+num(d.uv)+'</span><span class="stat-l">unique visitors</span></div>';
+    }).catch(function(e){
+      $("d-totalpv").className="err"; $("d-totalpv").textContent=e.message;
+      $("d-totaluv").className="err"; $("d-totaluv").textContent=e.message;
+    });
   }
 
   function loadStats(){
@@ -378,18 +381,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
   function loadTrend(){
     var el=$("d-trend");
     if(!_loaded) el.innerHTML='<div class="ld">Loading...</div>';
-    tabs("trend-tabs",[{t:"1h",v:"1h"},{t:"6h",v:"6h"},{t:"1d",v:"1d"},{t:"7d",v:"7d"},{t:"30d",v:"30d"},{t:"90d",v:"90d"},{t:"180d",v:"180d"},{t:"1y",v:"365d"}],S.period,function(v){S.period=v;syncURL();syncLabels();loadStats();loadTrend();loadRef();loadPlat();loadPop();loadVis();loadViews();});
+    tabs("trend-tabs",[{t:"1h",v:"1h"},{t:"6h",v:"6h"},{t:"1d",v:"1d"},{t:"7d",v:"7d"},{t:"30d",v:"30d"},{t:"90d",v:"90d"},{t:"180d",v:"180d"},{t:"1y",v:"365d"}],S.period,function(v){S.period=v;syncURL();syncLabels();loadStats();loadSummary();loadTrend();loadRef();loadPlat();loadPop();loadVis();loadViews();});
     var q={period:S.period,site_id:S.site}; if(S.slug)q.slug=S.slug;
     capi("analytics/trend?"+qs(q)).then(function(data){
-      updatePVUV(data);
       if(!data||!data.length){el.innerHTML='<div class="emp" style="line-height:160px">No data</div>';$("trend-leg").innerHTML="";return;}
       el.innerHTML="";
       var W=800,H=150,PL=44,PR=12,PT=10,PB=22,cw=W-PL-PR,ch=H-PT-PB,n=data.length;
       var mx=1,tpv=0,tuv=0;
       for(var i=0;i<n;i++){if(data[i].pv>mx)mx=data[i].pv;if(data[i].uv>mx)mx=data[i].uv;tpv+=data[i].pv;tuv+=data[i].uv;}
       mx=Math.ceil(mx*1.15)||1;
-      // inline legend in title bar
-      $("trend-leg").innerHTML='<span class="tl-pv">PV <b>'+num(tpv)+'</b></span> &nbsp; <span class="tl-uv">UV <b>'+num(tuv)+'</b></span>';
+      // inline legend in title bar (color key only, totals in stat cards)
+      $("trend-leg").innerHTML='<span class="tl-pv">\u2500 PV</span> &nbsp; <span class="tl-uv">\u2500 UV</span>';
       var s=svg("svg",{viewBox:"0 0 "+W+" "+H,preserveAspectRatio:"none"});
       // grid
       for(var g=0;g<=4;g++){var gy=PT+ch-ch*g/4;
@@ -555,8 +557,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
     S.site=elSite.value.trim()||window.location.hostname;
     S.slug=elSlug.value.trim(); S.fp=""; S.vOff=0; S.rOff=0;
     syncURL(); syncTag();
-    loadStats(); loadTrend(); loadRef(); loadPlat(); loadPop(); loadVis(); loadViews();
-    $("ts").textContent=new Date().toLocaleTimeString();
+    loadStats(); loadSummary(); loadTrend(); loadRef(); loadPlat(); loadPop(); loadVis(); loadViews();
+    var _now=new Date(); var _tz=_now.toLocaleTimeString("en",{timeZoneName:"short"}).split(" ").pop(); $("ts").textContent="| "+_now.getFullYear()+"-"+pad2(_now.getMonth()+1)+"-"+pad2(_now.getDate())+" "+pad2(_now.getHours())+":"+pad2(_now.getMinutes())+":"+pad2(_now.getSeconds())+" "+_tz;
     _loaded=true;
   };
 

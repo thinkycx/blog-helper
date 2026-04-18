@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -291,6 +292,7 @@ func (h *AnalyticsHandler) HandleTrend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
+		log.Printf("ERROR trend period=%s site=%s slug=%s: %v", period, siteID, slug, err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get trend")
 		return
 	}
@@ -368,6 +370,37 @@ func (h *AnalyticsHandler) HandlePlatforms(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: stats})
+}
+
+// HandleSummary handles GET /api/v1/analytics/summary?days=30&slug=...&site_id=...
+// Returns total PV and deduplicated UV for the period.
+func (h *AnalyticsHandler) HandleSummary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only GET is allowed")
+		return
+	}
+
+	siteID := r.URL.Query().Get("site_id")
+	if siteID == "" {
+		siteID = extractSiteID(r)
+	}
+
+	days := 0
+	if d := r.URL.Query().Get("days"); d != "" {
+		if v, err := strconv.Atoi(d); err == nil && v > 0 {
+			days = v
+		}
+	}
+
+	slug := r.URL.Query().Get("slug")
+
+	pv, uv, err := h.svc.GetPeriodSummary(r.Context(), siteID, slug, days)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get summary")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: pvuvData{PV: pv, UV: uv}})
 }
 
 // HandleViews handles GET /api/v1/analytics/views?site_id=...&slug=...&limit=50&offset=0

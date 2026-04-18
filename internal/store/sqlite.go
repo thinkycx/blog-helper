@@ -92,6 +92,25 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 	// These will fail silently if the column already exists (fresh install) or succeed on upgrade.
 	migrateV1ToV2(db)
 
+	// Fix created_at format: Go's time.Time serializes as "2006-01-02 15:04:05.999999 +0000 UTC"
+	// which SQLite's strftime() cannot parse. Normalize to "YYYY-MM-DD HH:MM:SS".
+	db.Exec(`UPDATE page_views SET created_at = SUBSTR(created_at, 1, 19) WHERE LENGTH(created_at) > 19`)
+
+	// Recalculate UV counts: previously excluded empty fingerprints, now include them.
+	db.Exec(`UPDATE daily_stats SET uv_count = (
+		SELECT COUNT(DISTINCT pv.fingerprint) FROM page_views pv
+		WHERE pv.site_id = daily_stats.site_id AND pv.page_slug = daily_stats.page_slug
+		  AND date(pv.created_at) = daily_stats.date
+	) WHERE uv_count = 0 AND pv_count > 0`)
+	db.Exec(`UPDATE site_daily_stats SET uv_count = (
+		SELECT COUNT(DISTINCT pv.fingerprint) FROM page_views pv
+		WHERE pv.site_id = site_daily_stats.site_id AND date(pv.created_at) = site_daily_stats.date
+	) WHERE uv_count = 0 AND pv_count > 0`)
+	db.Exec(`UPDATE page_stats SET uv_count = (
+		SELECT COUNT(DISTINCT pv.fingerprint) FROM page_views pv
+		WHERE pv.site_id = page_stats.site_id AND pv.page_slug = page_stats.page_slug
+	) WHERE uv_count = 0 AND pv_count > 0`)
+
 	return &SQLiteStore{db: db}, nil
 }
 
@@ -130,12 +149,13 @@ func (s *SQLiteStore) RecordPageView(ctx context.Context, pv *model.PageView) (*
 
 	now := time.Now().UTC()
 	today := now.Format("2006-01-02")
+	nowStr := now.Format("2006-01-02 15:04:05")
 
 	// 1. Insert raw page view event
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO page_views (site_id, page_slug, page_title, fingerprint, ip, user_agent, referrer, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		pv.SiteID, pv.PageSlug, pv.PageTitle, pv.Fingerprint, pv.IP, pv.UserAgent, pv.Referrer, now)
+		pv.SiteID, pv.PageSlug, pv.PageTitle, pv.Fingerprint, pv.IP, pv.UserAgent, pv.Referrer, nowStr)
 	if err != nil {
 		return nil, fmt.Errorf("insert page_view: %w", err)
 	}
@@ -147,7 +167,7 @@ func (s *SQLiteStore) RecordPageView(ctx context.Context, pv *model.PageView) (*
 		ON CONFLICT(site_id, page_slug) DO UPDATE SET
 			page_title = CASE WHEN excluded.page_title != '' THEN excluded.page_title ELSE page_stats.page_title END,
 			pv_count = pv_count + 1,
-			uv_count = (SELECT COUNT(DISTINCT fingerprint) FROM page_views WHERE site_id = ? AND page_slug = ? AND fingerprint != ''),
+			uv_count = (SELECT COUNT(DISTINCT fingerprint) FROM page_views WHERE site_id = ? AND page_slug = ?),
 			updated_at = ?`,
 		pv.SiteID, pv.PageSlug, pv.PageTitle, now, pv.SiteID, pv.PageSlug, now)
 	if err != nil {
@@ -161,7 +181,7 @@ func (s *SQLiteStore) RecordPageView(ctx context.Context, pv *model.PageView) (*
 		ON CONFLICT(site_id, page_slug, date) DO UPDATE SET
 			pv_count = pv_count + 1,
 			uv_count = (SELECT COUNT(DISTINCT fingerprint) FROM page_views
-				WHERE site_id = ? AND page_slug = ? AND date(created_at) = ? AND fingerprint != '')`,
+				WHERE site_id = ? AND page_slug = ? AND date(created_at) = ?)`,
 		pv.SiteID, pv.PageSlug, today, pv.SiteID, pv.PageSlug, today)
 	if err != nil {
 		return nil, fmt.Errorf("upsert daily_stats: %w", err)
@@ -174,7 +194,7 @@ func (s *SQLiteStore) RecordPageView(ctx context.Context, pv *model.PageView) (*
 		ON CONFLICT(site_id, date) DO UPDATE SET
 			pv_count = pv_count + 1,
 			uv_count = (SELECT COUNT(DISTINCT fingerprint) FROM page_views
-				WHERE site_id = ? AND date(created_at) = ? AND fingerprint != '')`,
+				WHERE site_id = ? AND date(created_at) = ?)`,
 		pv.SiteID, today, pv.SiteID, today)
 	if err != nil {
 		return nil, fmt.Errorf("upsert site_daily_stats: %w", err)
@@ -810,6 +830,29 @@ func (s *SQLiteStore) SearchVisitor(ctx context.Context, siteID, fingerprint str
 }
 
 // extractDomain parses a referrer URL and returns just the hostname.
+// GetPeriodSummary returns total PV and deduplicated UV for a given time period.
+func (s *SQLiteStore) GetPeriodSummary(ctx context.Context, siteID, slug string, days int) (int64, int64, error) {
+	where := "site_id = ?"
+	args := []interface{}{siteID}
+	if slug != "" {
+		where += " AND page_slug = ?"
+		args = append(args, slug)
+	}
+	if days > 0 {
+		where += " AND created_at >= datetime('now', ?)"
+		args = append(args, fmt.Sprintf("-%d days", days))
+	}
+
+	var pv, uv int64
+	err := s.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) AS pv, COUNT(DISTINCT fingerprint) AS uv FROM page_views WHERE "+where, args...,
+	).Scan(&pv, &uv)
+	if err != nil {
+		return 0, 0, fmt.Errorf("get period summary: %w", err)
+	}
+	return pv, uv, nil
+}
+
 func extractDomain(referrer string) string {
 	if referrer == "" {
 		return "direct"

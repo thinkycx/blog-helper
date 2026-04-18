@@ -59,6 +59,10 @@ type Store interface {
 	// days=0 means no time filter (all time).
 	SearchVisitor(ctx context.Context, siteID, fingerprint string, days, limit, offset int) (*model.PageViewList, error)
 
+	// GetPeriodSummary returns total PV and deduplicated UV for a given period.
+	// slug="" means site-wide; days=0 means all time.
+	GetPeriodSummary(ctx context.Context, siteID, slug string, days int) (pv int64, uv int64, err error)
+
 	// Close closes the underlying database connection.
 	Close() error
 }

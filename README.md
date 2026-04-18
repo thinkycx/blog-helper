@@ -146,6 +146,10 @@ window.BlogHelperConfig = {
 
 The SDK generates a lightweight browser fingerprint (screen resolution, canvas, timezone, etc.) hashed with SHA-256. No cookies required for the fingerprint itself — a cookie (`_bh_fp`) is used only to persist the hash across page loads for consistent UV counting.
 
+### UV Calculation
+
+UV (Unique Visitors) is deduplicated via `COUNT(DISTINCT fingerprint)`. When a visitor has no fingerprint (e.g., bots, JS disabled, privacy-hardened browsers), all such visits are counted as a single "unknown" visitor. This means UV may slightly undercount when multiple distinct visitors lack fingerprints, but ensures UV is always >= 1 when PV > 0.
+
 ## Anti-Abuse
 
 | Layer | Mechanism | Detail |

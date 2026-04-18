@@ -61,6 +61,7 @@ func main() {
 	mux.HandleFunc("/api/v1/analytics/trend", analyticsHandler.HandleTrend)
 	mux.HandleFunc("/api/v1/analytics/referrers", analyticsHandler.HandleReferrers)
 	mux.HandleFunc("/api/v1/analytics/platforms", analyticsHandler.HandlePlatforms)
+	mux.HandleFunc("/api/v1/analytics/summary", analyticsHandler.HandleSummary)
 	mux.HandleFunc("/api/v1/health", healthHandler.HandleHealth)
 
 	// Protected routes (require dashboard password)

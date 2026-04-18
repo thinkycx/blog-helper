@@ -9,7 +9,7 @@ MWEB_BASE := $(HOME)/Library/Containers/com.coderforart.MWeb3/Data/Documents/the
 SITE_PRIMARY ?= $(MWEB_BASE)/thinkycx.me
 SITE_SECONDARY ?=
 
-.PHONY: build build-linux run-backend test sdk clean deploy dev dev2
+.PHONY: build build-linux run test clean deploy dev dev2
 
 # ─── Build ───────────────────────────────────────────────
 
@@ -29,7 +29,8 @@ build-linux:
 # Start Go backend only (run in terminal 1)
 run:
 	go run ./cmd/server/ -addr 127.0.0.1:9001 -db ./data/blog-helper.db \
-		-allowed-origins "http://localhost:4000,http://localhost:4001,http://127.0.0.1:4000"
+		-allowed-origins "http://localhost:4000,http://localhost:4001,http://127.0.0.1:4000" \
+		-debug
 
 # Start dev server for primary site on :4000 (run in terminal 2)
 # Serves static files + proxies /api/ → Go backend

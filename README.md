@@ -31,7 +31,7 @@ blog-helper/
 │   │   ├── store.go                # Repository interface
 │   │   └── sqlite.go              # SQLite implementation + embedded migration
 │   └── service/analytics.go        # Business logic: dedup, bot filter, rate limit
-├── migrations/001_init.sql         # Schema (embedded into binary via go:embed)
+├── migrations/001_init.sql         # Schema reference (actual DDL in sqlite.go)
 ├── sdk/blog-helper.js              # Frontend JS SDK (zero-dependency, ~8KB)
 ├── scripts/dev-server.py           # Local dev server (static files + API proxy)
 └── Makefile
@@ -161,6 +161,7 @@ The SDK generates a lightweight browser fingerprint (screen resolution, canvas, 
 | `-addr` | `BH_ADDR` | `127.0.0.1:9001` | Listen address |
 | `-db` | `BH_DB` | `./data/blog-helper.db` | SQLite database path |
 | `-allowed-origins` | `BH_ALLOWED_ORIGINS` | `https://your-site.com` | CORS allowed origins (comma-separated) |
+| `-debug` | — | `false` | Expose version in health endpoint |
 
 ## Deployment
 

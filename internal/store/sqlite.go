@@ -59,12 +59,6 @@ CREATE TABLE IF NOT EXISTS site_daily_stats (
 );
 `
 
-// migrateSQL adds the site_id column to existing tables that lack it.
-// Safe to run multiple times — uses ALTER TABLE IF NOT EXISTS pattern via error ignoring.
-const migrateSQL = `
--- Migration: add site_id to existing tables (v1 → v2)
--- SQLite doesn't support IF NOT EXISTS for columns, so we attempt and ignore errors.
-`
 
 // SQLiteStore implements Store using SQLite.
 type SQLiteStore struct {

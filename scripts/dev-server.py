@@ -216,7 +216,7 @@ def main():
     print("  └──────────────────────────────────────────────────┘")
     print()
     print("  Make sure the Go backend is running in another terminal:")
-    print(f"    \033[1mmake run-backend\033[0m")
+    print(f"    \033[1mmake run\033[0m")
     print()
 
     server = http.server.HTTPServer(("0.0.0.0", PORT), DevHandler)

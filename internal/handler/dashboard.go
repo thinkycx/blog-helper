@@ -1,6 +1,9 @@
 package handler
 
-import "net/http"
+import (
+	"net/http"
+	"strings"
+)
 
 // dashboardHTML is the self-contained analytics dashboard page.
 // All CSS and JS are inline — zero external dependencies.
@@ -159,7 +162,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
 </head>
 <body>
 <div class="hdr">
-  <h1>Blog Analytics</h1>
+  <h1>Blog Analytics <span style="font-size:11px;font-weight:400;color:var(--muted)">@ {{VERSION}}</span></h1>
   <span class="ts" id="ts" style="margin-left:2px"></span>
   <div class="hdr-r">
     <input type="text" id="i-site" class="inp inp-s" placeholder="site_id" title="Site ID">
@@ -587,11 +590,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
 </html>`
 
 // DashboardHandler serves the analytics dashboard HTML page.
-type DashboardHandler struct{}
+type DashboardHandler struct {
+	html string
+}
 
 // NewDashboardHandler creates a new dashboard handler.
-func NewDashboardHandler() *DashboardHandler {
-	return &DashboardHandler{}
+func NewDashboardHandler(version string) *DashboardHandler {
+	html := strings.Replace(dashboardHTML, "{{VERSION}}", version, 1)
+	return &DashboardHandler{html: html}
 }
 
 // HandleDashboard serves the self-contained analytics dashboard.
@@ -603,5 +609,5 @@ func (h *DashboardHandler) HandleDashboard(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(dashboardHTML))
+	w.Write([]byte(h.html))
 }

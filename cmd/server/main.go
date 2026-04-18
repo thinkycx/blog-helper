@@ -44,7 +44,7 @@ func main() {
 	// Initialize handlers
 	analyticsHandler := handler.NewAnalyticsHandler(svc)
 	healthHandler := handler.NewHealthHandler(cfg.Version, cfg.Debug)
-	dashboardHandler := handler.NewDashboardHandler()
+	dashboardHandler := handler.NewDashboardHandler(cfg.Version)
 
 	// Setup routes
 	mux := http.NewServeMux()

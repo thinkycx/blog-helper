@@ -1,4 +1,4 @@
-VERSION := $(shell git describe --tags --always 2>/dev/null || echo "dev")
+VERSION := $(shell git log -1 --format=%cd --date=format:v%Y%m%d 2>/dev/null || echo "dev")
 LDFLAGS := -X main.version=$(VERSION) -s -w
 BINARY := blog-helper
 GOPROXY := https://goproxy.cn,direct

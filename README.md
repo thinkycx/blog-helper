@@ -6,6 +6,10 @@ Lightweight analytics toolkit for static blogs — PV/UV tracking, popular artic
 
 Data is isolated per site via `site_id`, auto-detected from the request hostname. One backend serves all your blogs.
 
+## Dashboard
+
+![Dashboard](dashboard.jpg)
+
 ## Features
 
 - **Page View Tracking** — PV + UV per page, with browser fingerprint-based dedup
@@ -14,6 +18,7 @@ Data is isolated per site via `site_id`, auto-detected from the request hostname
 - **Multi-Site** — one instance, N sites, data fully isolated by hostname
 - **Zero-Dependency SDK** — single JS file, auto-detects page type, renders stats into your theme
 - **Graceful Degradation** — if the backend is down, the blog works normally with no JS errors
+- **Dashboard** — password-protected analytics dashboard with trend charts, visitors, referrers, and raw access logs
 
 ## Architecture
 
@@ -24,8 +29,9 @@ blog-helper/
 │   ├── config/config.go            # Configuration (flags + env vars)
 │   ├── handler/
 │   │   ├── analytics.go            # API: report, stats, batch, popular
+│   │   ├── dashboard.go            # Dashboard: single-page analytics UI
 │   │   ├── health.go               # API: health check
-│   │   └── middleware.go           # CORS, logging, recovery, real-ip
+│   │   └── middleware.go           # CORS, logging, recovery, real-ip, dashboard auth
 │   ├── model/analytics.go          # Domain types
 │   ├── store/
 │   │   ├── store.go                # Repository interface
@@ -83,6 +89,12 @@ Base path: `/api/v1`
 | `GET` | `/api/v1/analytics/stats?slug=...&site_id=...` | Get stats for a single page |
 | `POST` | `/api/v1/analytics/stats/batch` | Batch get stats (body: `{"site_id":"...","slugs":[...]}`) |
 | `GET` | `/api/v1/analytics/popular?limit=10&period=30d&site_id=...` | Popular articles ranking |
+| `GET` | `/api/v1/analytics/trend?days=30&site_id=...` | PV/UV trend (supports slug filter) |
+| `GET` | `/api/v1/analytics/referrers?days=30&site_id=...` | Top referrer domains |
+| `GET` | `/api/v1/analytics/visitors?site_id=...` | Recent unique visitors |
+| `GET` | `/api/v1/analytics/views?site_id=...` | Raw page view records (auth required) |
+| `GET` | `/api/v1/analytics/summary?period=30d&site_id=...` | PV/UV summary for a period |
+| `GET` | `/api/v1/dashboard` | Analytics dashboard (auth required) |
 | `GET` | `/api/v1/health` | Health check |
 
 ### Request / Response Examples
@@ -169,6 +181,7 @@ The trend chart supports sub-daily periods (1h, 6h, 1d) and daily periods (7d, 3
 | `-addr` | `BH_ADDR` | `127.0.0.1:9001` | Listen address |
 | `-db` | `BH_DB` | `./data/blog-helper.db` | SQLite database path |
 | `-allowed-origins` | `BH_ALLOWED_ORIGINS` | `https://your-site.com` | CORS allowed origins (comma-separated) |
+| `-dashboard-pass` | `BH_DASHBOARD_PASS` | `helper` | Dashboard login password |
 | `-debug` | — | `false` | Expose version in health endpoint |
 
 ## Deployment

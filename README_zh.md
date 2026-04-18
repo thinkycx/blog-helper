@@ -14,6 +14,10 @@
 
 设计原则：**一个后端实例服务多个站点**，通过 `site_id`（自动从请求域名提取）隔离数据。
 
+## Dashboard
+
+![Dashboard](dashboard.jpg)
+
 ## 功能
 
 - **浏览量统计** — 每页 PV + UV，基于浏览器指纹去重
@@ -22,6 +26,7 @@
 - **多站点** — 一个后端实例，N 个站点，数据完全隔离
 - **零依赖 SDK** — 单个 JS 文件，自动识别页面类型，自动渲染统计数据
 - **优雅降级** — 后端宕机时博客正常工作，无 JS 报错
+- **分析面板** — 密码保护的 Dashboard，含趋势图、访客、来源、原始访问记录
 
 ## 项目结构
 
@@ -32,8 +37,9 @@ blog-helper/
 │   ├── config/config.go            # 配置（命令行参数 + 环境变量）
 │   ├── handler/
 │   │   ├── analytics.go            # API: 上报、查询、批量查询、热门文章
+│   │   ├── dashboard.go            # Dashboard：单页分析面板
 │   │   ├── health.go               # API: 健康检查
-│   │   └── middleware.go           # CORS、日志、Recovery、真实 IP 提取
+│   │   └── middleware.go           # CORS、日志、Recovery、真实 IP、Dashboard 认证
 │   ├── model/analytics.go          # 领域模型
 │   ├── store/
 │   │   ├── store.go                # 存储接口（方便未来切换实现）
@@ -91,6 +97,12 @@ SITE_DIR=/path/to/your-blog make dev
 | `GET` | `/api/v1/analytics/stats?slug=...&site_id=...` | 查询单页统计 |
 | `POST` | `/api/v1/analytics/stats/batch` | 批量查询（body: `{"site_id":"...","slugs":[...]}`) |
 | `GET` | `/api/v1/analytics/popular?limit=10&period=30d&site_id=...` | 热门文章排行 |
+| `GET` | `/api/v1/analytics/trend?days=30&site_id=...` | PV/UV 趋势（支持 slug 筛选） |
+| `GET` | `/api/v1/analytics/referrers?days=30&site_id=...` | 来源域名排行 |
+| `GET` | `/api/v1/analytics/visitors?site_id=...` | 最近独立访客 |
+| `GET` | `/api/v1/analytics/views?site_id=...` | 原始访问记录（需认证） |
+| `GET` | `/api/v1/analytics/summary?period=30d&site_id=...` | 时间段 PV/UV 汇总 |
+| `GET` | `/api/v1/dashboard` | 分析面板（需认证） |
 | `GET` | `/api/v1/health` | 健康检查 |
 
 ### 请求/响应示例
@@ -194,6 +206,7 @@ SQLite，DDL 内嵌为 Go const，首次启动自动建表。`migrations/001_ini
 | `-addr` | `BH_ADDR` | `127.0.0.1:9001` | 监听地址 |
 | `-db` | `BH_DB` | `./data/blog-helper.db` | SQLite 数据库路径 |
 | `-allowed-origins` | `BH_ALLOWED_ORIGINS` | `https://your-site.com` | CORS 允许的源（逗号分隔） |
+| `-dashboard-pass` | `BH_DASHBOARD_PASS` | `helper` | Dashboard 登录密码 |
 | `-debug` | — | `false` | Debug 模式（health 接口暴露 version） |
 
 ## 部署

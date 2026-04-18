@@ -8,6 +8,9 @@ data/
 # Docs (keep local only)
 docs/
 
+# Claude Code
+.claude/
+
 # OS files
 .DS_Store
 

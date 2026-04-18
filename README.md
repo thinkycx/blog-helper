@@ -150,6 +150,10 @@ The SDK generates a lightweight browser fingerprint (screen resolution, canvas, 
 
 UV (Unique Visitors) is deduplicated via `COUNT(DISTINCT fingerprint)`. When a visitor has no fingerprint (e.g., bots, JS disabled, privacy-hardened browsers), all such visits are counted as a single "unknown" visitor. This means UV may slightly undercount when multiple distinct visitors lack fingerprints, but ensures UV is always >= 1 when PV > 0.
 
+### Dashboard Time Ranges
+
+The trend chart supports sub-daily periods (1h, 6h, 1d) and daily periods (7d, 30d, 90d, 180d, 365d). The Visitors and Raw Views panels always use day-level granularity: sub-daily periods (1h/6h/1d) fall back to showing the last 1 day of data.
+
 ## Anti-Abuse
 
 | Layer | Mechanism | Detail |

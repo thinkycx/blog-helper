@@ -125,6 +125,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
   margin-bottom:-2px;transition:all 0.15s;font-weight:500;background:none;border-top:none;border-left:none;border-right:none}
 .tp-tab:hover{color:var(--text)}
 .tp-tab.on{color:var(--accent);border-bottom-color:var(--accent)}
+.tp-hint{font-size:11px;color:var(--muted);margin-left:auto;align-self:center}
 
 /* ── Platform bars ── */
 .plat-row{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px}
@@ -222,6 +223,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
       <div class="tp-tabs">
         <button class="tp-tab on" id="tab-vis" onclick="switchTab('vis')">Visitors</button>
         <button class="tp-tab" id="tab-views" onclick="switchTab('views')">Raw Views</button>
+        <span class="tp-hint" id="data-hint"></span>
       </div>
       <div class="tp on" id="p-vis"><div id="d-vis"><div class="ld">Loading...</div></div></div>
       <div class="tp" id="p-views"><div id="d-views"><div class="ld">Loading...</div></div></div>
@@ -348,6 +350,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
     $("lbl-pv").textContent="Total PV ("+lbl+")";
     $("lbl-uv").textContent="Total UV ("+lbl+")";
     $("lbl-plat").textContent="Platforms ("+lbl+")";
+    var d=pDays(S.period); $("data-hint").textContent="Last "+d+(d===1?" day":" days");
   }
 
   function loadSummary(){

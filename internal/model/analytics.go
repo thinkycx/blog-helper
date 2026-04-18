@@ -68,12 +68,13 @@ type ActiveVisitors struct {
 
 // VisitorSummary represents a unique visitor with their recent activity.
 type VisitorSummary struct {
-	Fingerprint string `json:"fingerprint"`
-	LastIP      string `json:"last_ip"`
-	LastUA      string `json:"last_ua"`
-	LastPage    string `json:"last_page"`
-	LastSeen    string `json:"last_seen"`
-	PageViews   int64  `json:"page_views"`
+	Fingerprint   string `json:"fingerprint"`
+	LastIP        string `json:"last_ip"`
+	LastUA        string `json:"last_ua"`
+	LastPage      string `json:"last_page"`
+	LastPageTitle string `json:"last_page_title"`
+	LastSeen      string `json:"last_seen"`
+	PageViews     int64  `json:"page_views"`
 }
 
 // PageViewRecord represents a raw page view for the dashboard detail view.

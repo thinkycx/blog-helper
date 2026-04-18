@@ -224,12 +224,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
   <div class="row row-data">
     <div class="c">
       <div class="tp-tabs">
-        <button class="tp-tab on" id="tab-vis" onclick="switchTab('vis')">Visitors</button>
-        <button class="tp-tab" id="tab-views" onclick="switchTab('views')">Raw Views</button>
+        <button class="tp-tab" id="tab-vis" onclick="switchTab('vis')">Visitors</button>
+        <button class="tp-tab on" id="tab-views" onclick="switchTab('views')">Raw Views</button>
         <span class="tp-hint" id="data-hint"></span>
       </div>
-      <div class="tp on" id="p-vis"><div id="d-vis"><div class="ld">Loading...</div></div></div>
-      <div class="tp" id="p-views"><div id="d-views"><div class="ld">Loading...</div></div></div>
+      <div class="tp" id="p-vis"><div id="d-vis"><div class="ld">Loading...</div></div></div>
+      <div class="tp on" id="p-views"><div id="d-views"><div class="ld">Loading...</div></div></div>
     </div>
   </div>
 </div>
@@ -250,7 +250,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
     period: _p.get("period") || "7d", popN: 10,
     vOff: 0, vLim: 30,
     rOff: 0, rLim: 20,
-    tab: "vis"
+    tab: "views"
   };
 
   var elSite = document.getElementById("i-site");
@@ -513,7 +513,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
       var out='<div class="tbl-w"><table class="tbl"><tr><th>Fingerprint</th><th>Last Page</th><th>IP</th><th>PV</th><th>Last Seen</th></tr>';
       for(var i=0;i<data.length;i++){var v=data[i];
         out+='<tr><td class="td-fp"><a href="#" onclick="viewFp(\''+h(v.fingerprint)+'\');return false" title="'+h(v.fingerprint)+'">'+h(v.fingerprint.slice(0,8))+'</a></td>'+
-          '<td>'+h(v.last_page)+'</td>'+
+          '<td title="'+h(v.last_page)+'">'+h(v.last_page_title||v.last_page)+'</td>'+
           '<td class="td-ip">'+h(v.last_ip)+'</td>'+
           '<td>'+v.page_views+'</td>'+
           '<td class="td-time">'+h(toLocal(v.last_seen))+'</td></tr>';

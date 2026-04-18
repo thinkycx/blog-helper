@@ -761,9 +761,9 @@ func (s *SQLiteStore) GetRecentVisitors(ctx context.Context, siteID string, days
 		timeFilter = fmt.Sprintf(" AND created_at >= datetime('now', '-%d days')", days)
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT fingerprint, ip, user_agent, page_slug, created_at, cnt
+		SELECT fingerprint, ip, user_agent, page_slug, page_title, created_at, cnt
 		FROM (
-			SELECT fingerprint, ip, user_agent, page_slug, created_at,
+			SELECT fingerprint, ip, user_agent, page_slug, page_title, created_at,
 				COUNT(*) OVER (PARTITION BY fingerprint) as cnt,
 				ROW_NUMBER() OVER (PARTITION BY fingerprint ORDER BY created_at DESC) as rn
 			FROM page_views
@@ -781,7 +781,7 @@ func (s *SQLiteStore) GetRecentVisitors(ctx context.Context, siteID string, days
 	var visitors []*model.VisitorSummary
 	for rows.Next() {
 		var v model.VisitorSummary
-		if err := rows.Scan(&v.Fingerprint, &v.LastIP, &v.LastUA, &v.LastPage, &v.LastSeen, &v.PageViews); err != nil {
+		if err := rows.Scan(&v.Fingerprint, &v.LastIP, &v.LastUA, &v.LastPage, &v.LastPageTitle, &v.LastSeen, &v.PageViews); err != nil {
 			return nil, fmt.Errorf("scan visitor: %w", err)
 		}
 		visitors = append(visitors, &v)

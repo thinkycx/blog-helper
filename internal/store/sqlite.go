@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	neturl "net/url"
 	"strings"
 	"time"
 
@@ -75,9 +76,10 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
-	// Set connection pool (SQLite is single-writer, but multiple readers)
-	db.SetMaxOpenConns(1) // single writer
-	db.SetMaxIdleConns(1)
+	// Connection pool: WAL mode allows concurrent reads, so allow multiple conns.
+	// Writes will serialize via SQLite's internal locking + busy_timeout.
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(4)
 	db.SetConnMaxLifetime(0) // keep alive forever
 
 	// Run migrations
@@ -352,6 +354,475 @@ func (s *SQLiteStore) fetchTitles(ctx context.Context, siteID string, slugs []st
 		result[slug] = title
 	}
 	return result, nil
+}
+
+// GetActiveVisitors returns the count of distinct fingerprints in the last N minutes.
+func (s *SQLiteStore) GetActiveVisitors(ctx context.Context, siteID string, minutes int) (*model.ActiveVisitors, error) {
+	var count int64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT fingerprint)
+		FROM page_views
+		WHERE site_id = ? AND created_at >= datetime('now', ? || ' minutes') AND fingerprint != ''`,
+		siteID, fmt.Sprintf("-%d", minutes)).Scan(&count)
+	if err != nil {
+		return nil, fmt.Errorf("get active visitors: %w", err)
+	}
+	return &model.ActiveVisitors{Count: count, Minutes: minutes}, nil
+}
+
+// GetSiteTrend returns site-wide daily PV/UV for the last N days, with gaps filled as zeros.
+func (s *SQLiteStore) GetSiteTrend(ctx context.Context, siteID string, days int) ([]*model.SiteDailyStat, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT date, pv_count, uv_count
+		FROM site_daily_stats
+		WHERE site_id = ? AND date >= date('now', ? || ' days')
+		ORDER BY date ASC`,
+		siteID, fmt.Sprintf("-%d", days))
+	if err != nil {
+		return nil, fmt.Errorf("get site trend: %w", err)
+	}
+	defer rows.Close()
+
+	// Collect query results into a map
+	dataMap := make(map[string]*model.SiteDailyStat)
+	for rows.Next() {
+		var s model.SiteDailyStat
+		if err := rows.Scan(&s.Date, &s.PVCount, &s.UVCount); err != nil {
+			return nil, fmt.Errorf("scan site trend: %w", err)
+		}
+		dataMap[s.Date] = &s
+	}
+
+	// Fill date gaps with zeros
+	now := time.Now().UTC()
+	result := make([]*model.SiteDailyStat, 0, days)
+	for i := days - 1; i >= 0; i-- {
+		date := now.AddDate(0, 0, -i).Format("2006-01-02")
+		if stat, ok := dataMap[date]; ok {
+			result = append(result, stat)
+		} else {
+			result = append(result, &model.SiteDailyStat{Date: date, PVCount: 0, UVCount: 0})
+		}
+	}
+	return result, nil
+}
+
+// GetTopReferrers returns the top N referrer domains within the last N days.
+func (s *SQLiteStore) GetTopReferrers(ctx context.Context, siteID string, days int, limit int) ([]*model.ReferrerStat, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT referrer, COUNT(*) as cnt
+		FROM page_views
+		WHERE site_id = ? AND created_at >= datetime('now', ? || ' days')
+		GROUP BY referrer
+		ORDER BY cnt DESC`,
+		siteID, fmt.Sprintf("-%d", days))
+	if err != nil {
+		return nil, fmt.Errorf("get top referrers: %w", err)
+	}
+	defer rows.Close()
+
+	// Aggregate by domain in Go (more robust than SQL string surgery)
+	domainCounts := make(map[string]int64)
+	for rows.Next() {
+		var referrer string
+		var count int64
+		if err := rows.Scan(&referrer, &count); err != nil {
+			return nil, fmt.Errorf("scan referrer: %w", err)
+		}
+		domain := extractDomain(referrer)
+		domainCounts[domain] += count
+	}
+
+	// Sort by count descending
+	type kv struct {
+		domain string
+		count  int64
+	}
+	sorted := make([]kv, 0, len(domainCounts))
+	for d, c := range domainCounts {
+		sorted = append(sorted, kv{d, c})
+	}
+	for i := 0; i < len(sorted); i++ {
+		for j := i + 1; j < len(sorted); j++ {
+			if sorted[j].count > sorted[i].count {
+				sorted[i], sorted[j] = sorted[j], sorted[i]
+			}
+		}
+	}
+
+	// Limit results
+	if len(sorted) > limit {
+		sorted = sorted[:limit]
+	}
+	result := make([]*model.ReferrerStat, len(sorted))
+	for i, s := range sorted {
+		result[i] = &model.ReferrerStat{Domain: s.domain, Count: s.count}
+	}
+	return result, nil
+}
+
+// GetPageTrend returns per-page daily PV/UV for the last N days, with gaps filled as zeros.
+func (s *SQLiteStore) GetPageTrend(ctx context.Context, siteID, slug string, days int) ([]*model.SiteDailyStat, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT date, pv_count, uv_count
+		FROM daily_stats
+		WHERE site_id = ? AND page_slug = ? AND date >= date('now', ? || ' days')
+		ORDER BY date ASC`,
+		siteID, slug, fmt.Sprintf("-%d", days))
+	if err != nil {
+		return nil, fmt.Errorf("get page trend: %w", err)
+	}
+	defer rows.Close()
+
+	dataMap := make(map[string]*model.SiteDailyStat)
+	for rows.Next() {
+		var s model.SiteDailyStat
+		if err := rows.Scan(&s.Date, &s.PVCount, &s.UVCount); err != nil {
+			return nil, fmt.Errorf("scan page trend: %w", err)
+		}
+		dataMap[s.Date] = &s
+	}
+
+	now := time.Now().UTC()
+	result := make([]*model.SiteDailyStat, 0, days)
+	for i := days - 1; i >= 0; i-- {
+		date := now.AddDate(0, 0, -i).Format("2006-01-02")
+		if stat, ok := dataMap[date]; ok {
+			result = append(result, stat)
+		} else {
+			result = append(result, &model.SiteDailyStat{Date: date, PVCount: 0, UVCount: 0})
+		}
+	}
+	return result, nil
+}
+
+// GetPlatformStats returns user-agent platform distribution for the last N days.
+func (s *SQLiteStore) GetPlatformStats(ctx context.Context, siteID string, days int) ([]*model.PlatformStat, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT user_agent FROM page_views
+		WHERE site_id = ? AND created_at >= datetime('now', ? || ' days')`,
+		siteID, fmt.Sprintf("-%d", days))
+	if err != nil {
+		return nil, fmt.Errorf("get platform stats: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int64)
+	for rows.Next() {
+		var ua string
+		if err := rows.Scan(&ua); err != nil {
+			return nil, fmt.Errorf("scan ua: %w", err)
+		}
+		p := classifyPlatform(ua)
+		counts[p]++
+	}
+
+	// Sort by count descending
+	order := []string{"Windows", "macOS", "Linux", "Android", "iOS", "Other"}
+	result := make([]*model.PlatformStat, 0)
+	for _, name := range order {
+		if c, ok := counts[name]; ok {
+			result = append(result, &model.PlatformStat{Platform: name, Count: c})
+			delete(counts, name)
+		}
+	}
+	// Any remaining
+	for name, c := range counts {
+		result = append(result, &model.PlatformStat{Platform: name, Count: c})
+	}
+	return result, nil
+}
+
+// classifyPlatform returns a platform name from a user-agent string.
+func classifyPlatform(ua string) string {
+	lower := strings.ToLower(ua)
+	switch {
+	case strings.Contains(lower, "iphone") || strings.Contains(lower, "ipad"):
+		return "iOS"
+	case strings.Contains(lower, "android"):
+		return "Android"
+	case strings.Contains(lower, "macintosh") || strings.Contains(lower, "mac os"):
+		return "macOS"
+	case strings.Contains(lower, "windows"):
+		return "Windows"
+	case strings.Contains(lower, "linux"):
+		return "Linux"
+	default:
+		return "Other"
+	}
+}
+
+// GetRecentTrend returns PV/UV trend for sub-daily periods by querying raw page_views.
+func (s *SQLiteStore) GetRecentTrend(ctx context.Context, siteID, slug, period string) ([]*model.SiteDailyStat, error) {
+	var sqlInterval string
+	var bucketSQL string
+	var step time.Duration
+
+	switch period {
+	case "1h":
+		sqlInterval = "-1 hour"
+		bucketSQL = `strftime('%Y-%m-%d %H:', created_at) || SUBSTR('00' || ((CAST(strftime('%M', created_at) AS INTEGER) / 5) * 5), -2)`
+		step = 5 * time.Minute
+	case "6h":
+		sqlInterval = "-6 hours"
+		bucketSQL = `strftime('%Y-%m-%d %H:', created_at) || CASE WHEN CAST(strftime('%M', created_at) AS INTEGER) < 30 THEN '00' ELSE '30' END`
+		step = 30 * time.Minute
+	case "1d":
+		sqlInterval = "-24 hours"
+		bucketSQL = `strftime('%Y-%m-%d %H:00', created_at)`
+		step = time.Hour
+	default:
+		return nil, fmt.Errorf("unsupported period: %s", period)
+	}
+
+	slugClause := ""
+	args := []interface{}{siteID}
+	if slug != "" {
+		slugClause = " AND page_slug = ?"
+		args = append(args, slug)
+	}
+	args = append(args, sqlInterval)
+
+	query := fmt.Sprintf(`
+		SELECT %s AS bucket, COUNT(*) AS pv, COUNT(DISTINCT fingerprint) AS uv
+		FROM page_views
+		WHERE site_id = ?%s AND created_at >= datetime('now', ?)
+		GROUP BY bucket
+		ORDER BY bucket ASC`, bucketSQL, slugClause)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get recent trend: %w", err)
+	}
+	defer rows.Close()
+
+	dataMap := make(map[string]*model.SiteDailyStat)
+	for rows.Next() {
+		var stat model.SiteDailyStat
+		if err := rows.Scan(&stat.Date, &stat.PVCount, &stat.UVCount); err != nil {
+			return nil, fmt.Errorf("scan recent trend: %w", err)
+		}
+		dataMap[stat.Date] = &stat
+	}
+
+	// Fill time gaps
+	now := time.Now().UTC()
+	var dur time.Duration
+	switch period {
+	case "1h":
+		dur = time.Hour
+	case "6h":
+		dur = 6 * time.Hour
+	case "1d":
+		dur = 24 * time.Hour
+	}
+	start := now.Add(-dur).Truncate(step)
+	end := now.Truncate(step)
+	result := make([]*model.SiteDailyStat, 0)
+	for t := start; !t.After(end); t = t.Add(step) {
+		key := t.Format("2006-01-02 15:04")
+		if stat, ok := dataMap[key]; ok {
+			result = append(result, stat)
+		} else {
+			result = append(result, &model.SiteDailyStat{Date: key, PVCount: 0, UVCount: 0})
+		}
+	}
+	return result, nil
+}
+
+// GetPageReferrers returns top referrer domains for a specific page within the last N days.
+func (s *SQLiteStore) GetPageReferrers(ctx context.Context, siteID, slug string, days, limit int) ([]*model.ReferrerStat, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT referrer, COUNT(*) as cnt
+		FROM page_views
+		WHERE site_id = ? AND page_slug = ? AND created_at >= datetime('now', ? || ' days')
+		GROUP BY referrer
+		ORDER BY cnt DESC`,
+		siteID, slug, fmt.Sprintf("-%d", days))
+	if err != nil {
+		return nil, fmt.Errorf("get page referrers: %w", err)
+	}
+	defer rows.Close()
+
+	domainCounts := make(map[string]int64)
+	for rows.Next() {
+		var referrer string
+		var count int64
+		if err := rows.Scan(&referrer, &count); err != nil {
+			return nil, fmt.Errorf("scan page referrer: %w", err)
+		}
+		domain := extractDomain(referrer)
+		domainCounts[domain] += count
+	}
+
+	type kv struct {
+		domain string
+		count  int64
+	}
+	sorted := make([]kv, 0, len(domainCounts))
+	for d, c := range domainCounts {
+		sorted = append(sorted, kv{d, c})
+	}
+	for i := 0; i < len(sorted); i++ {
+		for j := i + 1; j < len(sorted); j++ {
+			if sorted[j].count > sorted[i].count {
+				sorted[i], sorted[j] = sorted[j], sorted[i]
+			}
+		}
+	}
+
+	if len(sorted) > limit {
+		sorted = sorted[:limit]
+	}
+	result := make([]*model.ReferrerStat, len(sorted))
+	for i, s := range sorted {
+		result[i] = &model.ReferrerStat{Domain: s.domain, Count: s.count}
+	}
+	return result, nil
+}
+
+// GetRecentPageViews returns raw page view records with pagination.
+func (s *SQLiteStore) GetRecentPageViews(ctx context.Context, siteID, slug string, days, limit, offset int) (*model.PageViewList, error) {
+	var countQuery, dataQuery string
+	var countArgs, dataArgs []interface{}
+
+	where := "site_id = ?"
+	args := []interface{}{siteID}
+	if slug != "" {
+		where += " AND page_slug = ?"
+		args = append(args, slug)
+	}
+	if days > 0 {
+		where += " AND created_at >= datetime('now', ?)"
+		args = append(args, fmt.Sprintf("-%d days", days))
+	}
+
+	countQuery = "SELECT COUNT(*) FROM page_views WHERE " + where
+	countArgs = args
+	dataQuery = "SELECT id, page_slug, page_title, fingerprint, ip, user_agent, referrer, created_at FROM page_views WHERE " + where + " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+	dataArgs = append(append([]interface{}{}, args...), limit, offset)
+
+	var total int64
+	if err := s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+		return nil, fmt.Errorf("count page views: %w", err)
+	}
+
+	rows, err := s.db.QueryContext(ctx, dataQuery, dataArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("get recent page views: %w", err)
+	}
+	defer rows.Close()
+
+	var records []*model.PageViewRecord
+	for rows.Next() {
+		var r model.PageViewRecord
+		if err := rows.Scan(&r.ID, &r.PageSlug, &r.PageTitle, &r.Fingerprint, &r.IP, &r.UserAgent, &r.Referrer, &r.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan page view: %w", err)
+		}
+		records = append(records, &r)
+	}
+	if records == nil {
+		records = []*model.PageViewRecord{}
+	}
+
+	return &model.PageViewList{
+		Records: records,
+		Total:   total,
+		Limit:   limit,
+		Offset:  offset,
+	}, nil
+}
+
+// GetRecentVisitors returns unique visitors ordered by last seen time.
+func (s *SQLiteStore) GetRecentVisitors(ctx context.Context, siteID string, days, limit, offset int) ([]*model.VisitorSummary, error) {
+	timeFilter := ""
+	args := []interface{}{siteID}
+	if days > 0 {
+		timeFilter = fmt.Sprintf(" AND created_at >= datetime('now', '-%d days')", days)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT fingerprint, ip, user_agent, page_slug, created_at, cnt
+		FROM (
+			SELECT fingerprint, ip, user_agent, page_slug, created_at,
+				COUNT(*) OVER (PARTITION BY fingerprint) as cnt,
+				ROW_NUMBER() OVER (PARTITION BY fingerprint ORDER BY created_at DESC) as rn
+			FROM page_views
+			WHERE site_id = ? AND fingerprint != ''`+timeFilter+`
+		) sub
+		WHERE rn = 1
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?`,
+		append(args, limit, offset)...)
+	if err != nil {
+		return nil, fmt.Errorf("get recent visitors: %w", err)
+	}
+	defer rows.Close()
+
+	var visitors []*model.VisitorSummary
+	for rows.Next() {
+		var v model.VisitorSummary
+		if err := rows.Scan(&v.Fingerprint, &v.LastIP, &v.LastUA, &v.LastPage, &v.LastSeen, &v.PageViews); err != nil {
+			return nil, fmt.Errorf("scan visitor: %w", err)
+		}
+		visitors = append(visitors, &v)
+	}
+	if visitors == nil {
+		visitors = []*model.VisitorSummary{}
+	}
+	return visitors, nil
+}
+
+// SearchVisitor returns page view history for a specific fingerprint.
+func (s *SQLiteStore) SearchVisitor(ctx context.Context, siteID, fingerprint string, days, limit, offset int) (*model.PageViewList, error) {
+	where := "site_id = ? AND fingerprint = ?"
+	args := []interface{}{siteID, fingerprint}
+	if days > 0 {
+		where += " AND created_at >= datetime('now', ?)"
+		args = append(args, fmt.Sprintf("-%d days", days))
+	}
+
+	var total int64
+	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM page_views WHERE "+where, args...).Scan(&total)
+	if err != nil {
+		return nil, fmt.Errorf("count visitor views: %w", err)
+	}
+
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT id, page_slug, page_title, fingerprint, ip, user_agent, referrer, created_at FROM page_views WHERE "+where+" ORDER BY created_at DESC LIMIT ? OFFSET ?",
+		append(append([]interface{}{}, args...), limit, offset)...)
+	if err != nil {
+		return nil, fmt.Errorf("search visitor: %w", err)
+	}
+	defer rows.Close()
+
+	var records []*model.PageViewRecord
+	for rows.Next() {
+		var r model.PageViewRecord
+		if err := rows.Scan(&r.ID, &r.PageSlug, &r.PageTitle, &r.Fingerprint, &r.IP, &r.UserAgent, &r.Referrer, &r.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan visitor view: %w", err)
+		}
+		records = append(records, &r)
+	}
+	if records == nil {
+		records = []*model.PageViewRecord{}
+	}
+	return &model.PageViewList{Records: records, Total: total, Limit: limit, Offset: offset}, nil
+}
+
+// extractDomain parses a referrer URL and returns just the hostname.
+func extractDomain(referrer string) string {
+	if referrer == "" {
+		return "direct"
+	}
+	// Add scheme if missing so url.Parse works
+	raw := referrer
+	if !strings.Contains(raw, "://") {
+		raw = "http://" + raw
+	}
+	if u, err := neturl.Parse(raw); err == nil && u.Host != "" {
+		return strings.ToLower(u.Host)
+	}
+	return strings.ToLower(referrer)
 }
 
 // Close closes the database connection.

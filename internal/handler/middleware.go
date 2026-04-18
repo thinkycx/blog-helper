@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"log"
 	"net/http"
 	"runtime/debug"
@@ -76,6 +78,72 @@ func RealIPMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// DashboardAuthMiddleware protects routes with a simple cookie-based password check.
+// On unauthenticated access, it serves a login form. On POST with correct password,
+// it sets a cookie and redirects to the dashboard.
+func DashboardAuthMiddleware(password string) func(http.Handler) http.Handler {
+	tokenHash := fmt.Sprintf("%x", sha256.Sum256([]byte(password)))
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Check auth cookie
+			if cookie, err := r.Cookie("_bh_dash_token"); err == nil && cookie.Value == tokenHash {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Handle login POST
+			if r.Method == http.MethodPost {
+				r.ParseForm()
+				if r.FormValue("password") == password {
+					http.SetCookie(w, &http.Cookie{
+						Name:     "_bh_dash_token",
+						Value:    tokenHash,
+						Path:     "/api/v1/",
+						MaxAge:   30 * 24 * 3600, // 30 days
+						HttpOnly: true,
+						SameSite: http.SameSiteLaxMode,
+					})
+					http.Redirect(w, r, "/api/v1/dashboard", http.StatusSeeOther)
+					return
+				}
+				// Wrong password — show login with error
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.WriteHeader(http.StatusUnauthorized)
+				w.Write([]byte(loginPageHTML(true)))
+				return
+			}
+
+			// Not authenticated — show login page
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(loginPageHTML(false)))
+		})
+	}
+}
+
+func loginPageHTML(showError bool) string {
+	errMsg := ""
+	if showError {
+		errMsg = `<div style="color:#ff4d4f;margin-bottom:12px">Incorrect password</div>`
+	}
+	return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+		`<title>Login - Blog Analytics</title>` +
+		`<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;` +
+		`display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f0f2f5}` +
+		`@media(prefers-color-scheme:dark){body{background:#141414}.box{background:#1f1f1f;border-color:#303030;color:#e8e8e8}` +
+		`input{background:#141414;border-color:#303030;color:#e8e8e8}}` +
+		`.box{background:#fff;border:1px solid #e8e8e8;border-radius:10px;padding:32px;width:320px;text-align:center}` +
+		`h1{font-size:18px;margin-bottom:20px}` +
+		`input{width:100%;padding:10px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;outline:none;margin-bottom:12px}` +
+		`input:focus{border-color:#1677ff}` +
+		`button{width:100%;padding:10px;background:#1677ff;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer}` +
+		`button:hover{opacity:0.85}</style></head><body>` +
+		`<div class="box"><h1>Blog Analytics</h1>` + errMsg +
+		`<form method="POST"><input type="password" name="password" placeholder="Password" autofocus>` +
+		`<button type="submit">Login</button></form></div></body></html>`
 }
 
 // statusWriter wraps http.ResponseWriter to capture the status code.

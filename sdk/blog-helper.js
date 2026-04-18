@@ -42,11 +42,21 @@
       showPopular: true,
       popularLimit: 8,
       popularPeriod: "30d",
+      showActive: false,
+      showTrend: false,
+      showReferrers: false,
+      activeMinutes: 30,
+      trendDays: 30,
+      referrersDays: 30,
+      referrersLimit: 10,
     },
     pvLabel: "阅读",
     uvLabel: "观众",
     separator: " | ",
     popularTitle: "Hot Posts",
+    activeLabel: "人最近在访问",
+    trendTitle: "访问趋势",
+    referrersTitle: "来源",
     timeout: 5000,
   };
 
@@ -251,6 +261,30 @@
     );
   }
 
+  function apiActive(config, minutes) {
+    return apiRequest(
+      config,
+      "GET",
+      "/active?minutes=" + minutes + "&site_id=" + encodeURIComponent(config.siteId)
+    );
+  }
+
+  function apiTrend(config, days) {
+    return apiRequest(
+      config,
+      "GET",
+      "/trend?days=" + days + "&site_id=" + encodeURIComponent(config.siteId)
+    );
+  }
+
+  function apiReferrers(config, days, limit) {
+    return apiRequest(
+      config,
+      "GET",
+      "/referrers?days=" + days + "&limit=" + limit + "&site_id=" + encodeURIComponent(config.siteId)
+    );
+  }
+
   // ============================================================
   // 4. Page Detector Module
   // ============================================================
@@ -309,6 +343,22 @@
       ".ba-popular li a { font-size: 13px; color: #586069; padding: 2px 4px; border-radius: 3px; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; transition: all 0.2s; }",
       ".ba-popular li a:hover { color: #0366d6; background-color: #f1f8ff; text-decoration: none; }",
       ".ba-popular .ba-count { color: #586069; font-size: 12px; flex-shrink: 0; padding-left: 6px; }",
+      // Active visitors badge
+      ".ba-active { font-size: 13px; color: #586069; margin-bottom: 12px; }",
+      ".ba-active-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #28a745; margin-right: 4px; animation: ba-pulse 2s infinite; }",
+      "@keyframes ba-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }",
+      ".ba-active-count { font-weight: 600; color: #24292e; }",
+      // Trend sparkline
+      ".ba-trend { margin-bottom: 12px; }",
+      ".ba-trend-chart { display: flex; align-items: flex-end; gap: 1px; height: 40px; }",
+      ".ba-trend-bar { flex: 1; min-height: 2px; background: #0366d6; border-radius: 1px 1px 0 0; opacity: 0.7; transition: opacity 0.2s; }",
+      ".ba-trend-bar:hover { opacity: 1; }",
+      ".ba-trend-summary { font-size: 12px; color: #586069; margin-top: 4px; }",
+      // Referrers list (reuses popular styling)
+      ".ba-referrers ul { list-style: none; padding-left: 0; margin: 0; }",
+      ".ba-referrers li { margin-bottom: 4px; display: flex; justify-content: space-between; align-items: baseline; }",
+      ".ba-referrers li span:first-child { font-size: 13px; color: #586069; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }",
+      ".ba-referrers .ba-count { color: #586069; font-size: 12px; flex-shrink: 0; padding-left: 6px; }",
     ].join("\n");
     document.head.appendChild(style);
   }
@@ -395,6 +445,85 @@
     }
     html += "</ul></div>";
     mount.innerHTML = html;
+  }
+
+  function renderActive(config, data) {
+    if (!data || data.count === 0) return;
+
+    var mount = document.querySelector(config.selectors.sidebarMount);
+    if (!mount) return;
+
+    var el = document.createElement("div");
+    el.className = "ba-active";
+    el.innerHTML =
+      '<span class="ba-active-dot"></span>' +
+      '<span class="ba-active-count">' + data.count + '</span> ' +
+      escapeHtml(config.activeLabel);
+    mount.parentNode.insertBefore(el, mount);
+  }
+
+  function renderTrend(config, data) {
+    if (!data || data.length === 0) return;
+
+    var mount = document.querySelector(config.selectors.sidebarMount);
+    if (!mount) return;
+
+    var maxPV = 1;
+    var totalPV = 0;
+    var totalUV = 0;
+    for (var i = 0; i < data.length; i++) {
+      if (data[i].pv > maxPV) maxPV = data[i].pv;
+      totalPV += data[i].pv;
+      totalUV += data[i].uv;
+    }
+
+    var html = '<div class="sidebar-section ba-trend">';
+    html += '<div class="sidebar-title">' + escapeHtml(config.trendTitle) + '</div>';
+    html += '<div class="ba-trend-chart">';
+    for (var i = 0; i < data.length; i++) {
+      var pct = Math.max((data[i].pv / maxPV) * 100, 5);
+      html += '<div class="ba-trend-bar" style="height:' + pct + '%" title="' +
+        data[i].date + ': ' + data[i].pv + ' PV / ' + data[i].uv + ' UV"></div>';
+    }
+    html += '</div>';
+    html += '<div class="ba-trend-summary">' + data.length + '天: ' +
+      totalPV.toLocaleString() + ' PV / ' + totalUV.toLocaleString() + ' UV</div>';
+    html += '</div>';
+
+    mount.parentNode.insertBefore(
+      createElementFromHTML(html),
+      mount
+    );
+  }
+
+  function renderReferrers(config, data) {
+    if (!data || data.length === 0) return;
+
+    var mount = document.querySelector(config.selectors.sidebarMount);
+    if (!mount) return;
+
+    var html = '<div class="sidebar-section ba-referrers">';
+    html += '<div class="sidebar-title">' + escapeHtml(config.referrersTitle) + '</div>';
+    html += '<ul>';
+    for (var i = 0; i < data.length; i++) {
+      html += '<li><span>' + escapeHtml(data[i].domain) + '</span>' +
+        '<span class="ba-count">' + data[i].count + '</span></li>';
+    }
+    html += '</ul></div>';
+
+    // Insert after popular section
+    var popular = mount.querySelector(".ba-popular");
+    if (popular) {
+      popular.parentNode.insertBefore(createElementFromHTML(html), popular.nextSibling);
+    } else {
+      mount.appendChild(createElementFromHTML(html));
+    }
+  }
+
+  function createElementFromHTML(htmlString) {
+    var div = document.createElement("div");
+    div.innerHTML = htmlString.trim();
+    return div.firstChild;
   }
 
   function escapeHtml(str) {
@@ -492,6 +621,33 @@
           config.features.popularPeriod
         ).then(function (articles) {
           renderPopular(config, articles);
+        })
+      );
+    }
+
+    // Active visitors
+    if (config.features.showActive) {
+      promises.push(
+        apiActive(config, config.features.activeMinutes).then(function (data) {
+          renderActive(config, data);
+        })
+      );
+    }
+
+    // Site trend sparkline
+    if (config.features.showTrend) {
+      promises.push(
+        apiTrend(config, config.features.trendDays).then(function (data) {
+          renderTrend(config, data);
+        })
+      );
+    }
+
+    // Top referrers
+    if (config.features.showReferrers) {
+      promises.push(
+        apiReferrers(config, config.features.referrersDays, config.features.referrersLimit).then(function (data) {
+          renderReferrers(config, data);
         })
       );
     }

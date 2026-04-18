@@ -8,11 +8,12 @@ import (
 
 // Config holds the server configuration.
 type Config struct {
-	Addr           string   // Listen address, e.g. "127.0.0.1:8080"
-	DBPath         string   // SQLite database file path
-	AllowedOrigins []string // CORS allowed origins
-	Version        string   // Server version (injected at build time)
-	Debug          bool     // Debug mode: expose version in health endpoint
+	Addr              string   // Listen address, e.g. "127.0.0.1:8080"
+	DBPath            string   // SQLite database file path
+	AllowedOrigins    []string // CORS allowed origins
+	Version           string   // Server version (injected at build time)
+	Debug             bool     // Debug mode: expose version in health endpoint
+	DashboardPassword string   // Password for dashboard access (default: "helper")
 }
 
 // Parse reads configuration from command-line flags and environment variables.
@@ -26,6 +27,7 @@ func Parse(version string) *Config {
 	var origins string
 	flag.StringVar(&origins, "allowed-origins", "https://your-site.com", "Comma-separated CORS allowed origins")
 	flag.BoolVar(&cfg.Debug, "debug", false, "Debug mode (expose version in health endpoint)")
+	flag.StringVar(&cfg.DashboardPassword, "dashboard-pass", "helper", "Dashboard access password")
 
 	flag.Parse()
 
@@ -38,6 +40,9 @@ func Parse(version string) *Config {
 	}
 	if v := os.Getenv("BH_ALLOWED_ORIGINS"); v != "" {
 		origins = v
+	}
+	if v := os.Getenv("BH_DASHBOARD_PASS"); v != "" {
+		cfg.DashboardPassword = v
 	}
 
 	cfg.AllowedOrigins = parseOrigins(origins)

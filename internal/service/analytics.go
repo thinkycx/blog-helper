@@ -89,6 +89,115 @@ func (s *AnalyticsService) GetPopularArticles(ctx context.Context, siteID string
 	return s.store.GetPopularArticles(ctx, normalizeSiteID(siteID), limit, period)
 }
 
+// GetActiveVisitors returns the count of distinct visitors in the last N minutes.
+func (s *AnalyticsService) GetActiveVisitors(ctx context.Context, siteID string, minutes int) (*model.ActiveVisitors, error) {
+	if minutes <= 0 || minutes > 1440 {
+		minutes = 30
+	}
+	return s.store.GetActiveVisitors(ctx, normalizeSiteID(siteID), minutes)
+}
+
+// GetSiteTrend returns site-wide daily PV/UV for the last N days.
+func (s *AnalyticsService) GetSiteTrend(ctx context.Context, siteID string, days int) ([]*model.SiteDailyStat, error) {
+	if days <= 0 || days > 365 {
+		days = 30
+	}
+	return s.store.GetSiteTrend(ctx, normalizeSiteID(siteID), days)
+}
+
+// GetPlatformStats returns UA platform distribution for the last N days.
+func (s *AnalyticsService) GetPlatformStats(ctx context.Context, siteID string, days int) ([]*model.PlatformStat, error) {
+	if days <= 0 || days > 365 {
+		days = 30
+	}
+	return s.store.GetPlatformStats(ctx, normalizeSiteID(siteID), days)
+}
+
+// GetRecentTrend returns PV/UV trend for sub-daily periods (1h, 6h, 1d).
+func (s *AnalyticsService) GetRecentTrend(ctx context.Context, siteID, slug, period string) ([]*model.SiteDailyStat, error) {
+	normalizedSlug := ""
+	if slug != "" {
+		normalizedSlug = normalizeSlug(slug)
+	}
+	return s.store.GetRecentTrend(ctx, normalizeSiteID(siteID), normalizedSlug, period)
+}
+
+// GetPageTrend returns per-page daily PV/UV for the last N days.
+func (s *AnalyticsService) GetPageTrend(ctx context.Context, siteID, slug string, days int) ([]*model.SiteDailyStat, error) {
+	if days <= 0 || days > 365 {
+		days = 30
+	}
+	return s.store.GetPageTrend(ctx, normalizeSiteID(siteID), normalizeSlug(slug), days)
+}
+
+// GetPageReferrers returns top referrer domains for a specific page.
+func (s *AnalyticsService) GetPageReferrers(ctx context.Context, siteID, slug string, days, limit int) ([]*model.ReferrerStat, error) {
+	if days <= 0 || days > 365 {
+		days = 30
+	}
+	if limit <= 0 || limit > 50 {
+		limit = 10
+	}
+	return s.store.GetPageReferrers(ctx, normalizeSiteID(siteID), normalizeSlug(slug), days, limit)
+}
+
+// GetRecentPageViews returns raw page view records with pagination.
+func (s *AnalyticsService) GetRecentPageViews(ctx context.Context, siteID, slug string, days, limit, offset int) (*model.PageViewList, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if days < 0 {
+		days = 0
+	}
+	normalizedSlug := ""
+	if slug != "" {
+		normalizedSlug = normalizeSlug(slug)
+	}
+	return s.store.GetRecentPageViews(ctx, normalizeSiteID(siteID), normalizedSlug, days, limit, offset)
+}
+
+// GetRecentVisitors returns unique visitors ordered by last seen time.
+func (s *AnalyticsService) GetRecentVisitors(ctx context.Context, siteID string, days, limit, offset int) ([]*model.VisitorSummary, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if days < 0 {
+		days = 0
+	}
+	return s.store.GetRecentVisitors(ctx, normalizeSiteID(siteID), days, limit, offset)
+}
+
+// SearchVisitor returns page view history for a specific fingerprint.
+func (s *AnalyticsService) SearchVisitor(ctx context.Context, siteID, fingerprint string, days, limit, offset int) (*model.PageViewList, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if days < 0 {
+		days = 0
+	}
+	return s.store.SearchVisitor(ctx, normalizeSiteID(siteID), fingerprint, days, limit, offset)
+}
+
+// GetTopReferrers returns the top N referrer domains within the last N days.
+func (s *AnalyticsService) GetTopReferrers(ctx context.Context, siteID string, days int, limit int) ([]*model.ReferrerStat, error) {
+	if days <= 0 || days > 365 {
+		days = 30
+	}
+	if limit <= 0 || limit > 50 {
+		limit = 10
+	}
+	return s.store.GetTopReferrers(ctx, normalizeSiteID(siteID), days, limit)
+}
+
 // normalizeSlug cleans up a page slug for consistent storage.
 func normalizeSlug(slug string) string {
 	slug = strings.TrimSpace(slug)

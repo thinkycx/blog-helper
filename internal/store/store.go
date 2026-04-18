@@ -25,6 +25,40 @@ type Store interface {
 	// period: "7d", "30d", "all"
 	GetPopularArticles(ctx context.Context, siteID string, limit int, period string) ([]*model.PopularArticle, error)
 
+	// GetSiteTrend returns site-wide daily PV/UV for the last N days.
+	GetSiteTrend(ctx context.Context, siteID string, days int) ([]*model.SiteDailyStat, error)
+
+	// GetTopReferrers returns the top N referrer domains within the last N days.
+	GetTopReferrers(ctx context.Context, siteID string, days int, limit int) ([]*model.ReferrerStat, error)
+
+	// GetActiveVisitors returns the count of distinct fingerprints in the last N minutes.
+	GetActiveVisitors(ctx context.Context, siteID string, minutes int) (*model.ActiveVisitors, error)
+
+	// GetPageTrend returns per-page daily PV/UV for the last N days.
+	GetPageTrend(ctx context.Context, siteID, slug string, days int) ([]*model.SiteDailyStat, error)
+
+	// GetRecentTrend returns PV/UV trend for sub-daily periods (1h, 6h, 1d)
+	// by querying raw page_views with appropriate time bucket aggregation.
+	GetRecentTrend(ctx context.Context, siteID, slug, period string) ([]*model.SiteDailyStat, error)
+
+	// GetPlatformStats returns UA platform distribution for the last N days.
+	GetPlatformStats(ctx context.Context, siteID string, days int) ([]*model.PlatformStat, error)
+
+	// GetPageReferrers returns top referrer domains for a specific page.
+	GetPageReferrers(ctx context.Context, siteID, slug string, days, limit int) ([]*model.ReferrerStat, error)
+
+	// GetRecentPageViews returns raw page view records with pagination.
+	// days=0 means no time filter (all time).
+	GetRecentPageViews(ctx context.Context, siteID, slug string, days, limit, offset int) (*model.PageViewList, error)
+
+	// GetRecentVisitors returns unique visitors ordered by last seen time.
+	// days=0 means no time filter (all time).
+	GetRecentVisitors(ctx context.Context, siteID string, days, limit, offset int) ([]*model.VisitorSummary, error)
+
+	// SearchVisitor returns page view history for a specific fingerprint.
+	// days=0 means no time filter (all time).
+	SearchVisitor(ctx context.Context, siteID, fingerprint string, days, limit, offset int) (*model.PageViewList, error)
+
 	// Close closes the underlying database connection.
 	Close() error
 }

@@ -29,7 +29,7 @@ func (h *HealthHandler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]interface{}{
-		"uptime": time.Since(h.startTime).String(),
+		"uptime": time.Since(h.startTime).Truncate(time.Second).String(),
 	}
 	if h.debug {
 		data["version"] = h.version

@@ -21,10 +21,12 @@ Environment variables:
 """
 
 import http.server
+import http.client
 import os
 import sys
 import urllib.request
 import urllib.error
+import urllib.parse
 
 SITE_DIR = os.environ.get("SITE_DIR", "")
 PORT = int(os.environ.get("PORT", "4000"))
@@ -40,52 +42,49 @@ class DevHandler(http.server.SimpleHTTPRequestHandler):
     # ----- Reverse proxy for /api/ -----
 
     def _proxy(self):
-        target = f"http://{API_BACKEND}{self.path}"
         # Read request body
         content_length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(content_length) if content_length else None
 
-        # Build upstream request
-        req = urllib.request.Request(target, data=body, method=self.command)
-
-        # Forward relevant headers
-        for header in ("Content-Type", "Origin", "Referer", "User-Agent"):
-            val = self.headers.get(header)
-            if val:
-                req.add_header(header, val)
-
-        # Simulate nginx: X-Real-IP + Host
-        client_ip = self.client_address[0]
-        req.add_header("X-Real-IP", client_ip)
-        req.add_header("X-Forwarded-For", client_ip)
-        req.add_header("Host", self.headers.get("Host", f"localhost:{PORT}"))
-
+        # Use http.client directly to avoid auto-redirect (preserves Set-Cookie on 303)
         try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                resp_body = resp.read()
-                self.send_response(resp.status)
-                for key, val in resp.getheaders():
-                    if key.lower() not in ("transfer-encoding", "connection"):
-                        self.send_header(key, val)
-                # Add CORS headers (like nginx would)
-                origin = self.headers.get("Origin", "")
-                if origin:
-                    self.send_header("Access-Control-Allow-Origin", origin)
-                    self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-                    self.send_header("Access-Control-Allow-Headers", "Content-Type")
-                self.end_headers()
-                self.wfile.write(resp_body)
-        except urllib.error.HTTPError as e:
-            resp_body = e.read()
-            self.send_response(e.code)
-            self.send_header("Content-Type", "application/json")
+            host, _, port = API_BACKEND.partition(":")
+            conn = http.client.HTTPConnection(host, int(port) if port else 80, timeout=10)
+
+            # Build headers
+            hdrs = {}
+            for header in ("Content-Type", "Origin", "Referer", "User-Agent", "Cookie",
+                           "Accept", "Accept-Encoding", "Accept-Language"):
+                val = self.headers.get(header)
+                if val:
+                    hdrs[header] = val
+            client_ip = self.client_address[0]
+            hdrs["X-Real-IP"] = client_ip
+            hdrs["X-Forwarded-For"] = client_ip
+            hdrs["Host"] = self.headers.get("Host", f"localhost:{PORT}")
+
+            conn.request(self.command, self.path, body=body, headers=hdrs)
+            resp = conn.getresponse()
+            resp_body = resp.read()
+            conn.close()
+
+            # Rewrite Location header to point to dev proxy, not backend
+            self.send_response(resp.status)
+            for key, val in resp.getheaders():
+                k = key.lower()
+                if k in ("transfer-encoding", "connection"):
+                    continue
+                # Rewrite redirect Location from backend to proxy
+                if k == "location":
+                    val = val.replace(f"http://{API_BACKEND}", "")
+                self.send_header(key, val)
             self.end_headers()
             self.wfile.write(resp_body)
-        except urllib.error.URLError as e:
+        except Exception as e:
             self.send_response(502)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            msg = f'{{"ok":false,"error":{{"code":"BAD_GATEWAY","message":"Backend unavailable: {e.reason}"}}}}'
+            msg = f'{{"ok":false,"error":{{"code":"BAD_GATEWAY","message":"Backend unavailable: {e}"}}}}'
             self.wfile.write(msg.encode())
 
     # ----- Route dispatch -----

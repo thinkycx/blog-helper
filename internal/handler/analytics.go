@@ -212,6 +212,301 @@ func (h *AnalyticsHandler) HandlePopular(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: articles})
 }
 
+// HandleActive handles GET /api/v1/analytics/active?minutes=30&site_id=...
+func (h *AnalyticsHandler) HandleActive(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only GET is allowed")
+		return
+	}
+
+	minutes := 30
+	if m := r.URL.Query().Get("minutes"); m != "" {
+		if v, err := strconv.Atoi(m); err == nil && v > 0 {
+			minutes = v
+		}
+	}
+
+	siteID := r.URL.Query().Get("site_id")
+	if siteID == "" {
+		siteID = extractSiteID(r)
+	}
+
+	active, err := h.svc.GetActiveVisitors(r.Context(), siteID, minutes)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get active visitors")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: active})
+}
+
+// HandleTrend handles GET /api/v1/analytics/trend?period=7d&slug=...&site_id=...
+// period: "1h" (5-min buckets), "6h" (30-min), "1d" (hourly), "7d"/"30d"/etc (daily).
+// Also accepts ?days=N for backward compatibility.
+// If slug is provided, returns per-page trend; otherwise returns site-wide trend.
+func (h *AnalyticsHandler) HandleTrend(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only GET is allowed")
+		return
+	}
+
+	siteID := r.URL.Query().Get("site_id")
+	if siteID == "" {
+		siteID = extractSiteID(r)
+	}
+
+	slug := r.URL.Query().Get("slug")
+	period := r.URL.Query().Get("period")
+
+	// Backward compat: if period not set, derive from days param
+	if period == "" {
+		days := 30
+		if d := r.URL.Query().Get("days"); d != "" {
+			if v, err := strconv.Atoi(d); err == nil && v > 0 {
+				days = v
+			}
+		}
+		period = strconv.Itoa(days) + "d"
+	}
+
+	var trend []*model.SiteDailyStat
+	var err error
+
+	switch period {
+	case "1h", "6h", "1d":
+		trend, err = h.svc.GetRecentTrend(r.Context(), siteID, slug, period)
+	default:
+		// Parse days from period like "7d", "30d", "365d"
+		days := 30
+		if strings.HasSuffix(period, "d") {
+			if v, e := strconv.Atoi(period[:len(period)-1]); e == nil && v > 0 {
+				days = v
+			}
+		}
+		if slug != "" {
+			trend, err = h.svc.GetPageTrend(r.Context(), siteID, slug, days)
+		} else {
+			trend, err = h.svc.GetSiteTrend(r.Context(), siteID, days)
+		}
+	}
+
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get trend")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: trend})
+}
+
+// HandleReferrers handles GET /api/v1/analytics/referrers?days=30&limit=10&slug=...&site_id=...
+// If slug is provided, returns referrers for that page; otherwise returns site-wide referrers.
+func (h *AnalyticsHandler) HandleReferrers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only GET is allowed")
+		return
+	}
+
+	days := 30
+	if d := r.URL.Query().Get("days"); d != "" {
+		if v, err := strconv.Atoi(d); err == nil && v > 0 {
+			days = v
+		}
+	}
+
+	limit := 10
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = v
+		}
+	}
+
+	siteID := r.URL.Query().Get("site_id")
+	if siteID == "" {
+		siteID = extractSiteID(r)
+	}
+
+	slug := r.URL.Query().Get("slug")
+
+	var referrers []*model.ReferrerStat
+	var err error
+	if slug != "" {
+		referrers, err = h.svc.GetPageReferrers(r.Context(), siteID, slug, days, limit)
+	} else {
+		referrers, err = h.svc.GetTopReferrers(r.Context(), siteID, days, limit)
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get referrers")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: referrers})
+}
+
+// HandlePlatforms handles GET /api/v1/analytics/platforms?days=30&site_id=...
+func (h *AnalyticsHandler) HandlePlatforms(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only GET is allowed")
+		return
+	}
+
+	days := 30
+	if d := r.URL.Query().Get("days"); d != "" {
+		if v, err := strconv.Atoi(d); err == nil && v > 0 {
+			days = v
+		}
+	}
+
+	siteID := r.URL.Query().Get("site_id")
+	if siteID == "" {
+		siteID = extractSiteID(r)
+	}
+
+	stats, err := h.svc.GetPlatformStats(r.Context(), siteID, days)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get platform stats")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: stats})
+}
+
+// HandleViews handles GET /api/v1/analytics/views?site_id=...&slug=...&limit=50&offset=0
+// Returns raw page view records. Protected by dashboard auth middleware.
+func (h *AnalyticsHandler) HandleViews(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only GET is allowed")
+		return
+	}
+
+	siteID := r.URL.Query().Get("site_id")
+	if siteID == "" {
+		siteID = extractSiteID(r)
+	}
+
+	slug := r.URL.Query().Get("slug")
+
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = v
+		}
+	}
+
+	offset := 0
+	if o := r.URL.Query().Get("offset"); o != "" {
+		if v, err := strconv.Atoi(o); err == nil && v >= 0 {
+			offset = v
+		}
+	}
+
+	days := 0
+	if d := r.URL.Query().Get("days"); d != "" {
+		if v, err := strconv.Atoi(d); err == nil && v > 0 {
+			days = v
+		}
+	}
+
+	result, err := h.svc.GetRecentPageViews(r.Context(), siteID, slug, days, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get page views")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: result})
+}
+
+// HandleVisitors handles GET /api/v1/analytics/visitors?site_id=...&days=30&limit=20&offset=0
+// Returns recent unique visitors. Protected by dashboard auth middleware.
+func (h *AnalyticsHandler) HandleVisitors(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only GET is allowed")
+		return
+	}
+
+	siteID := r.URL.Query().Get("site_id")
+	if siteID == "" {
+		siteID = extractSiteID(r)
+	}
+
+	days := 0
+	if d := r.URL.Query().Get("days"); d != "" {
+		if v, err := strconv.Atoi(d); err == nil && v > 0 {
+			days = v
+		}
+	}
+
+	limit := 20
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = v
+		}
+	}
+
+	offset := 0
+	if o := r.URL.Query().Get("offset"); o != "" {
+		if v, err := strconv.Atoi(o); err == nil && v >= 0 {
+			offset = v
+		}
+	}
+
+	visitors, err := h.svc.GetRecentVisitors(r.Context(), siteID, days, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get visitors")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: visitors})
+}
+
+// HandleVisitorSearch handles GET /api/v1/analytics/visitor?site_id=...&fingerprint=xxx&days=30&limit=50&offset=0
+// Returns page view history for a specific fingerprint. Protected by dashboard auth middleware.
+func (h *AnalyticsHandler) HandleVisitorSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only GET is allowed")
+		return
+	}
+
+	siteID := r.URL.Query().Get("site_id")
+	if siteID == "" {
+		siteID = extractSiteID(r)
+	}
+
+	fingerprint := r.URL.Query().Get("fingerprint")
+	if fingerprint == "" {
+		writeError(w, http.StatusBadRequest, "MISSING_PARAM", "fingerprint is required")
+		return
+	}
+
+	days := 0
+	if d := r.URL.Query().Get("days"); d != "" {
+		if v, err := strconv.Atoi(d); err == nil && v > 0 {
+			days = v
+		}
+	}
+
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = v
+		}
+	}
+
+	offset := 0
+	if o := r.URL.Query().Get("offset"); o != "" {
+		if v, err := strconv.Atoi(o); err == nil && v >= 0 {
+			offset = v
+		}
+	}
+
+	result, err := h.svc.SearchVisitor(r.Context(), siteID, fingerprint, days, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to search visitor")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: result})
+}
+
 // --- Helpers ---
 
 // extractSiteID derives the site identifier from the request's Origin or Referer header.

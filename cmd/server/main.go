@@ -44,16 +44,30 @@ func main() {
 	// Initialize handlers
 	analyticsHandler := handler.NewAnalyticsHandler(svc)
 	healthHandler := handler.NewHealthHandler(cfg.Version, cfg.Debug)
+	dashboardHandler := handler.NewDashboardHandler()
 
 	// Setup routes
 	mux := http.NewServeMux()
 
-	// API v1 routes
+	// Dashboard auth middleware (protects dashboard + raw views)
+	dashAuth := handler.DashboardAuthMiddleware(cfg.DashboardPassword)
+
+	// API v1 routes (public — used by SDK)
 	mux.HandleFunc("/api/v1/analytics/report", analyticsHandler.HandleReport)
 	mux.HandleFunc("/api/v1/analytics/stats", analyticsHandler.HandleStats)
 	mux.HandleFunc("/api/v1/analytics/stats/batch", analyticsHandler.HandleBatchStats)
 	mux.HandleFunc("/api/v1/analytics/popular", analyticsHandler.HandlePopular)
+	mux.HandleFunc("/api/v1/analytics/active", analyticsHandler.HandleActive)
+	mux.HandleFunc("/api/v1/analytics/trend", analyticsHandler.HandleTrend)
+	mux.HandleFunc("/api/v1/analytics/referrers", analyticsHandler.HandleReferrers)
+	mux.HandleFunc("/api/v1/analytics/platforms", analyticsHandler.HandlePlatforms)
 	mux.HandleFunc("/api/v1/health", healthHandler.HandleHealth)
+
+	// Protected routes (require dashboard password)
+	mux.Handle("/api/v1/dashboard", dashAuth(http.HandlerFunc(dashboardHandler.HandleDashboard)))
+	mux.Handle("/api/v1/analytics/views", dashAuth(http.HandlerFunc(analyticsHandler.HandleViews)))
+	mux.Handle("/api/v1/analytics/visitors", dashAuth(http.HandlerFunc(analyticsHandler.HandleVisitors)))
+	mux.Handle("/api/v1/analytics/visitor", dashAuth(http.HandlerFunc(analyticsHandler.HandleVisitorSearch)))
 
 	// Apply middleware chain (outermost first)
 	var h http.Handler = mux

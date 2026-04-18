@@ -8,13 +8,15 @@ import (
 // HealthHandler handles health check requests.
 type HealthHandler struct {
 	version   string
+	debug     bool
 	startTime time.Time
 }
 
 // NewHealthHandler creates a new health handler.
-func NewHealthHandler(version string) *HealthHandler {
+func NewHealthHandler(version string, debug bool) *HealthHandler {
 	return &HealthHandler{
 		version:   version,
+		debug:     debug,
 		startTime: time.Now(),
 	}
 }
@@ -26,11 +28,15 @@ func (h *HealthHandler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	data := map[string]interface{}{
+		"uptime": time.Since(h.startTime).String(),
+	}
+	if h.debug {
+		data["version"] = h.version
+	}
+
 	writeJSON(w, http.StatusOK, apiResponse{
-		OK: true,
-		Data: map[string]interface{}{
-			"version": h.version,
-			"uptime":  time.Since(h.startTime).String(),
-		},
+		OK:   true,
+		Data: data,
 	})
 }

@@ -1,6 +1,6 @@
 # Build artifacts
 dist/
-server
+/server
 
 # Data
 data/

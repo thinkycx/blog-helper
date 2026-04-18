@@ -12,6 +12,7 @@ type Config struct {
 	DBPath         string   // SQLite database file path
 	AllowedOrigins []string // CORS allowed origins
 	Version        string   // Server version (injected at build time)
+	Debug          bool     // Debug mode: expose version in health endpoint
 }
 
 // Parse reads configuration from command-line flags and environment variables.
@@ -24,6 +25,7 @@ func Parse(version string) *Config {
 
 	var origins string
 	flag.StringVar(&origins, "allowed-origins", "https://your-site.com", "Comma-separated CORS allowed origins")
+	flag.BoolVar(&cfg.Debug, "debug", false, "Debug mode (expose version in health endpoint)")
 
 	flag.Parse()
 

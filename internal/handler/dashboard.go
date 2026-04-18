@@ -392,17 +392,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
     capi("analytics/trend?"+qs(q)).then(function(data){
       if(!data||!data.length){el.innerHTML='<div class="emp" style="line-height:160px">No data</div>';$("trend-leg").innerHTML="";return;}
       el.innerHTML="";
-      var W=800,H=150,PL=44,PR=12,PT=10,PB=22,cw=W-PL-PR,ch=H-PT-PB,n=data.length;
+      // Use actual container width for viewBox so text is never stretched
+      var W=el.clientWidth||800,H=150,PL=44,PR=12,PT=10,PB=22,cw=W-PL-PR,ch=H-PT-PB,n=data.length;
       var mx=1,tpv=0,tuv=0;
       for(var i=0;i<n;i++){if(data[i].pv>mx)mx=data[i].pv;if(data[i].uv>mx)mx=data[i].uv;tpv+=data[i].pv;tuv+=data[i].uv;}
       mx=Math.ceil(mx*1.15)||1;
       // inline legend in title bar (color key only, totals in stat cards)
       $("trend-leg").innerHTML='<span class="tl-pv">\u2500 PV</span> &nbsp; <span class="tl-uv">\u2500 UV</span>';
-      var s=svg("svg",{viewBox:"0 0 "+W+" "+H,preserveAspectRatio:"none"});
+      var s=svg("svg",{viewBox:"0 0 "+W+" "+H});
       // grid
       for(var g=0;g<=4;g++){var gy=PT+ch-ch*g/4;
         s.appendChild(svg("line",{x1:PL,y1:gy,x2:W-PR,y2:gy,stroke:"var(--border)","stroke-dasharray":g===0?"none":"2,2","stroke-width":"0.5"}));
-        var t=svg("text",{x:PL-6,y:gy+3,fill:"var(--muted)","font-size":"8","text-anchor":"end"});t.textContent=Math.round(mx*g/4);s.appendChild(t);
+        var t=svg("text",{x:PL-6,y:gy+3,fill:"var(--muted)","font-size":"10","text-anchor":"end"});t.textContent=Math.round(mx*g/4);s.appendChild(t);
       }
       function xp(i){return PL+(i/(n-1||1))*cw;}function yp(v){return PT+ch-(v/mx)*ch;}
       var pp=[],up=[];
@@ -414,10 +415,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
       // lines
       s.appendChild(svg("polyline",{points:pp.join(" "),fill:"none",stroke:"var(--accent)","stroke-width":"1.5","stroke-linejoin":"round"}));
       s.appendChild(svg("polyline",{points:up.join(" "),fill:"none",stroke:"var(--accent2)","stroke-width":"1.5","stroke-linejoin":"round"}));
-      // x labels
+      // x labels — compute step to avoid overlap (~50px per label)
       var isHour=data[0].date.length>10;
-      var step=n<=15?2:n<=30?5:n<=60?10:n<=120?20:n<=200?30:n<=400?60:90;
-      for(var i=0;i<n;i++){if(i%step===0||i===n-1){var l=svg("text",{x:xp(i),y:H-PB+16,fill:"var(--muted)","font-size":"8","text-anchor":"middle"});l.textContent=isHour?localHM(data[i].date):data[i].date.slice(5);s.appendChild(l);}}
+      var lblW=50, maxLbls=Math.max(2,Math.floor(cw/lblW)), step=Math.max(1,Math.ceil(n/maxLbls));
+      for(var i=0;i<n;i++){if(i%step===0||i===n-1){var l=svg("text",{x:xp(i),y:H-PB+14,fill:"var(--muted)","font-size":"10","text-anchor":"middle"});l.textContent=isHour?localHM(data[i].date):data[i].date.slice(5);s.appendChild(l);}}
       // hover
       var tip=$("tip");
       for(var i=0;i<n;i++){(function(idx){

@@ -416,7 +416,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
       s.appendChild(svg("polyline",{points:up.join(" "),fill:"none",stroke:"var(--accent2)","stroke-width":"1.5","stroke-linejoin":"round"}));
       // x labels
       var isHour=data[0].date.length>10;
-      var step=n<=15?2:n<=30?5:n<=90?10:30;
+      var step=n<=15?2:n<=30?5:n<=60?10:n<=120?20:n<=200?30:n<=400?60:90;
       for(var i=0;i<n;i++){if(i%step===0||i===n-1){var l=svg("text",{x:xp(i),y:H-PB+16,fill:"var(--muted)","font-size":"8","text-anchor":"middle"});l.textContent=isHour?localHM(data[i].date):data[i].date.slice(5);s.appendChild(l);}}
       // hover
       var tip=$("tip");

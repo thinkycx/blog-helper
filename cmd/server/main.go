@@ -69,6 +69,10 @@ func main() {
 	// Comment config endpoint (always available for SDK auto-detect)
 	mux.HandleFunc("/api/v1/comments/config", commentHandler.HandleCommentConfig)
 
+	// Page reactions (always available — independent of comment mode)
+	mux.HandleFunc("/api/v1/page/react", commentHandler.HandlePageReact)
+	mux.HandleFunc("/api/v1/page/reactions", commentHandler.HandlePageReactions)
+
 	// Comment routes (only if comment-mode != off)
 	if cfg.CommentMode != "off" {
 		log.Printf("Comment mode: %s", cfg.CommentMode)
@@ -79,8 +83,6 @@ func main() {
 		mux.HandleFunc("/api/v1/comments/react", commentHandler.HandleReact)
 		mux.HandleFunc("/api/v1/comments/recent", commentHandler.HandleRecentComments)
 		mux.HandleFunc("/api/v1/comments/hot", commentHandler.HandleHotComments)
-		mux.HandleFunc("/api/v1/page/react", commentHandler.HandlePageReact)
-		mux.HandleFunc("/api/v1/page/reactions", commentHandler.HandlePageReactions)
 		mux.HandleFunc("/api/v1/commenter/lookup", commentHandler.HandleLookupCommenter)
 		mux.HandleFunc("/api/v1/commenter/profile", commentHandler.HandleUpdateProfile)
 	}

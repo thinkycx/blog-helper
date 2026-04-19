@@ -173,7 +173,17 @@ func (s *CommentService) PostComment(ctx context.Context, req *PostCommentReques
 	author := &model.CommenterPublic{
 		ID:         commenter.ID,
 		Nickname:   commenter.Nickname,
-		AvatarSeed: commenter.Nickname, // Use nickname for avatar initial
+		AvatarSeed: commenter.Nickname,
+		BlogURL:    commenter.BlogURL,
+		Bio:        commenter.Bio,
+	}
+
+	// me includes email (self-view only)
+	me := &model.CommenterPublic{
+		ID:         commenter.ID,
+		Email:      commenter.Email,
+		Nickname:   commenter.Nickname,
+		AvatarSeed: commenter.Nickname,
 		BlogURL:    commenter.BlogURL,
 		Bio:        commenter.Bio,
 	}
@@ -189,7 +199,7 @@ func (s *CommentService) PostComment(ctx context.Context, req *PostCommentReques
 			Author:    author,
 		},
 		Token: newToken,
-		Me:    author,
+		Me:    me,
 	}, nil
 }
 
@@ -251,8 +261,9 @@ func (s *CommentService) GetComments(ctx context.Context, siteID, slug, token, f
 			_ = s.store.UpdateLastSeen(ctx, commenter.ID)
 			resp.Me = &model.CommenterPublic{
 				ID:         commenter.ID,
+				Email:      commenter.Email, // only for self-view
 				Nickname:   commenter.Nickname,
-				AvatarSeed: commenter.Nickname, // Use nickname for avatar initial
+				AvatarSeed: commenter.Nickname,
 				BlogURL:    commenter.BlogURL,
 				Bio:        commenter.Bio,
 			}
@@ -308,6 +319,7 @@ func (s *CommentService) UpdateProfile(ctx context.Context, token, nickname, ava
 
 	return &model.CommenterPublic{
 		ID:         commenter.ID,
+		Email:      commenter.Email,
 		Nickname:   nickname,
 		AvatarSeed: avatarSeed,
 		BlogURL:    strings.TrimSpace(blogURL),

@@ -185,10 +185,10 @@ type updateProfileRequest struct {
 	Bio        string `json:"bio"`
 }
 
-// HandleUpdateProfile handles PUT /api/v1/commenter/profile
+// HandleUpdateProfile handles POST /api/v1/commenter/profile
 func (h *CommentHandler) HandleUpdateProfile(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPut {
-		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only PUT is allowed")
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only POST is allowed")
 		return
 	}
 

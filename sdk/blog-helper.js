@@ -326,41 +326,14 @@
   // ============================================================
 
   function injectStyles() {
-    if (document.getElementById("ba-styles")) return;
-    var style = document.createElement("style");
-    style.id = "ba-styles";
-    style.textContent = [
-      // List page: PV below date, placeholder reserves space, fade in when ready
-      "@keyframes ba-fadein { from { opacity: 0; } to { opacity: 1; } }",
-      ".ba-pv { display: block; font-size: 12px; white-space: nowrap; min-height: 1.4em; opacity: 0; }",
-      ".ba-pv-ready { color: #999; opacity: 1; animation: ba-fadein 0.3s ease; }",
-      // Post page: inline PV/UV, right side
-      ".ba-stats { color: #586069; font-size: 13px; float: right; white-space: nowrap; line-height: inherit; }",
-      ".ba-stats .ba-separator { margin: 0 4px; color: #d1d5da; }",
-      // Popular sidebar — matches TOC: sidebar-section + sidebar-title structure
-      ".ba-popular ul { list-style: none; padding-left: 0; margin: 0; }",
-      ".ba-popular li { margin-bottom: 4px; display: flex; justify-content: space-between; align-items: baseline; }",
-      ".ba-popular li a { font-size: 13px; color: #586069; padding: 2px 4px; border-radius: 3px; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; transition: all 0.2s; }",
-      ".ba-popular li a:hover { color: #0366d6; background-color: #f1f8ff; text-decoration: none; }",
-      ".ba-popular .ba-count { color: #586069; font-size: 12px; flex-shrink: 0; padding-left: 6px; }",
-      // Active visitors badge
-      ".ba-active { font-size: 13px; color: #586069; margin-bottom: 12px; }",
-      ".ba-active-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #28a745; margin-right: 4px; animation: ba-pulse 2s infinite; }",
-      "@keyframes ba-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }",
-      ".ba-active-count { font-weight: 600; color: #24292e; }",
-      // Trend sparkline
-      ".ba-trend { margin-bottom: 12px; }",
-      ".ba-trend-chart { display: flex; align-items: flex-end; gap: 1px; height: 40px; }",
-      ".ba-trend-bar { flex: 1; min-height: 2px; background: #0366d6; border-radius: 1px 1px 0 0; opacity: 0.7; transition: opacity 0.2s; }",
-      ".ba-trend-bar:hover { opacity: 1; }",
-      ".ba-trend-summary { font-size: 12px; color: #586069; margin-top: 4px; }",
-      // Referrers list (reuses popular styling)
-      ".ba-referrers ul { list-style: none; padding-left: 0; margin: 0; }",
-      ".ba-referrers li { margin-bottom: 4px; display: flex; justify-content: space-between; align-items: baseline; }",
-      ".ba-referrers li span:first-child { font-size: 13px; color: #586069; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }",
-      ".ba-referrers .ba-count { color: #586069; font-size: 12px; flex-shrink: 0; padding-left: 6px; }",
-    ].join("\n");
-    document.head.appendChild(style);
+    if (document.getElementById("bh-css")) return;
+    var link = document.createElement("link");
+    link.id = "bh-css";
+    link.rel = "stylesheet";
+    var myScript = document.querySelector('script[src*="blog-helper"]');
+    var baseDir = myScript ? myScript.src.replace(/[^\/]+$/, '') : 'asset/js/';
+    link.href = baseDir + "blog-helper.css";
+    document.head.appendChild(link);
   }
 
   function renderListPV(config, statsMap) {
@@ -725,16 +698,21 @@
     return 'data:image/svg+xml,' + encodeURIComponent(svg);
   }
 
-  // Format time — relative for recent, exact for older
-  function formatTime(dateStr) {
+  // Format time — relative for recent, exact for older. short=true for sidebar (compact)
+  function formatTime(dateStr, short) {
+    if (!dateStr) return "";
     // Handle both "2024-01-15 14:30:00" and "2024-01-15T14:30:00Z"
     var s = dateStr.indexOf('T') === -1 ? dateStr.replace(' ', 'T') + 'Z' : dateStr;
     var date = new Date(s);
     var now = new Date();
     var diff = Math.floor((now - date) / 1000);
-    if (diff < 60) return diff + " 秒前";
-    if (diff < 3600) return Math.floor(diff / 60) + " 分钟前";
-    if (diff < 86400) return Math.floor(diff / 3600) + " 小时前";
+    if (diff < 60) return short ? "刚刚" : diff + " 秒前";
+    if (diff < 3600) return Math.floor(diff / 60) + (short ? "分钟前" : " 分钟前");
+    if (diff < 86400) return Math.floor(diff / 3600) + (short ? "小时前" : " 小时前");
+    if (short) {
+      if (diff < 2592000) return Math.floor(diff / 86400) + "天前";
+      return (date.getMonth() + 1) + "/" + date.getDate();
+    }
     var y = date.getFullYear();
     var m = String(date.getMonth() + 1).padStart(2, '0');
     var d = String(date.getDate()).padStart(2, '0');
@@ -743,8 +721,7 @@
     return y + '-' + m + '-' + d + ' ' + hh + ':' + mm;
   }
 
-  // Lightweight Markdown renderer (safe: escapeHtml first, then apply formatting)
-  // --- Markdown rendering via marked.js (lazy-loaded from CDN) ---
+  // --- Markdown rendering via marked.js (lazy-loaded from local asset) ---
 
   var _markedReady = false;
   var _markedLoading = false;
@@ -846,183 +823,11 @@
   }
 
   function renderMarkdown(raw) {
-    // Use marked.js if loaded, otherwise basic fallback
     if (window.marked && window.marked.parse) {
-      var html = window.marked.parse(raw);
-      return sanitizeHTML(html);
+      return sanitizeHTML(window.marked.parse(raw));
     }
-    // Fallback: basic rendering (already escapes HTML internally)
-    return renderMarkdownFallback(raw);
-  }
-
-  function renderMarkdownFallback(raw) {
-    var text = escapeHtml(raw);
-    text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, function (_, lang, code) {
-      return '<pre class="bh-md-pre"><code>' + code.replace(/\n$/, '') + '</code></pre>';
-    });
-    text = text.replace(/`([^`\n]+)`/g, '<code class="bh-md-code">$1</code>');
-    text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img class="bh-md-img" src="$2" alt="$1">');
-    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-    text = text.replace(/\*\*([^\*]+)\*\*/g, '<strong>$1</strong>');
-    text = text.replace(/\*([^\*]+)\*/g, '<em>$1</em>');
-    text = text.replace(/~~([^~]+)~~/g, '<del>$1</del>');
-    var lines = text.split('\n');
-    var out = [], i = 0;
-    while (i < lines.length) {
-      var line = lines[i];
-      if (line.indexOf('<pre class="bh-md-pre">') !== -1) {
-        var preBlock = line;
-        while (i < lines.length - 1 && lines[i].indexOf('</pre>') === -1) { i++; preBlock += '\n' + lines[i]; }
-        out.push(preBlock); i++; continue;
-      }
-      if (/^&gt;\s?(.*)/.test(line)) {
-        var bqLines = [];
-        while (i < lines.length && /^&gt;\s?(.*)/.test(lines[i])) { bqLines.push(lines[i].replace(/^&gt;\s?/, '')); i++; }
-        out.push('<blockquote class="bh-md-bq">' + bqLines.join('<br>') + '</blockquote>'); continue;
-      }
-      if (/^[-*]\s+(.+)/.test(line)) {
-        var items = [];
-        while (i < lines.length && /^[-*]\s+(.+)/.test(lines[i])) { items.push('<li>' + lines[i].replace(/^[-*]\s+/, '') + '</li>'); i++; }
-        out.push('<ul class="bh-md-ul">' + items.join('') + '</ul>'); continue;
-      }
-      if (/^\d+\.\s+(.+)/.test(line)) {
-        var items = [];
-        while (i < lines.length && /^\d+\.\s+(.+)/.test(lines[i])) { items.push('<li>' + lines[i].replace(/^\d+\.\s+/, '') + '</li>'); i++; }
-        out.push('<ol class="bh-md-ol">' + items.join('') + '</ol>'); continue;
-      }
-      if (line.trim() === '') { out.push(''); i++; continue; }
-      out.push(line); i++;
-    }
-    var result = [], paragraph = [];
-    for (var j = 0; j < out.length; j++) {
-      if (out[j] === '') { if (paragraph.length > 0) { result.push(paragraph.join('<br>')); paragraph = []; } }
-      else { paragraph.push(out[j]); }
-    }
-    if (paragraph.length > 0) result.push(paragraph.join('<br>'));
-    return result.join('<br><br>');
-  }
-
-  function injectCommentStyles() {
-    if (document.getElementById("bh-comment-styles")) return;
-    var style = document.createElement("style");
-    style.id = "bh-comment-styles";
-    style.textContent = [
-      ".bh-comments { margin-top: 40px; border-top: 1px solid #ddd; padding-top: 24px; font-family: inherit; color: #333; }",
-      ".bh-comments-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid #ddd; color: #333; }",
-      ".bh-comment-list { padding: 0; margin: 0 0 24px; }",
-      ".bh-comment-thread { border-bottom: 1px solid #eee; }",
-      ".bh-comment-thread:last-child { border-bottom: none; }",
-      ".bh-comment-item { display: flex; gap: 10px; padding: 10px 0; transition: background 0.5s; }",
-      ".bh-comment-highlight { background: #fff3cd; border-radius: 6px; box-shadow: 0 0 0 2px #ffe69c; }",
-      ".bh-comment-replies { margin-left: 50px; border-left: 2px solid #eee; padding-left: 12px; }",
-      ".bh-comment-replies .bh-comment-item { padding: 8px 0; }",
-      ".bh-reply-to { font-size: 12px; color: #666; }",
-      ".bh-comment-avatar { width: 40px; height: 40px; border-radius: 5px; flex-shrink: 0; }",
-      ".bh-comment-body { flex: 1; min-width: 0; }",
-      ".bh-comment-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }",
-      ".bh-comment-author { font-weight: 600; font-size: 14px; color: #555; text-decoration: none; cursor: default; }",
-      "a.bh-comment-author { cursor: pointer; }",
-      "a.bh-comment-author:hover { color: #555; }",
-      ".bh-comment-meta { margin-left: auto; display: flex; align-items: baseline; gap: 8px; flex-shrink: 0; }",
-      ".bh-comment-time { font-size: 12px; color: #999; white-space: nowrap; }",
-      ".bh-comment-anchor { font-size: 12px; color: #ddd; text-decoration: none; }",
-      ".bh-comment-anchor:hover { color: #999; }",
-      ".bh-comment-content { font-size: 14px; line-height: 1.5; color: #333; word-break: break-word; }",
-      ".bh-comment-content p { margin: 0 0 4px; }",
-      ".bh-comment-content p:last-child { margin-bottom: 0; }",
-      ".bh-comment-actions { margin-top: 4px; display: flex; align-items: center; justify-content: flex-end; gap: 4px; }",
-      ".bh-reactions { display: flex; gap: 2px; margin-left: auto; }",
-      ".bh-reaction { background: none; border: 1px solid transparent; font-size: 12px; cursor: pointer; padding: 1px 5px; border-radius: 10px; display: inline-flex; align-items: center; gap: 2px; transition: all 0.15s; filter: grayscale(1); opacity: 0.45; }",
-      ".bh-reaction:hover { filter: grayscale(0); opacity: 1; border-color: #e8e8e8; background: #fafafa; }",
-      ".bh-reaction-active { filter: grayscale(0); opacity: 1; border-color: #e0e0e0; background: #f5f5f5; }",
-      ".bh-reaction .bh-reaction-count { font-size: 11px; color: #999; }",
-      ".bh-reaction-active .bh-reaction-count { color: #666; }",
-      ".bh-comment-actions .bh-reply-btn { background: none; border: none; color: #999; font-size: 12px; cursor: pointer; padding: 2px 6px; border-radius: 3px; }",
-      ".bh-comment-actions .bh-reply-btn:hover { color: #333; background: #f5f5f5; }",
-      ".bh-comment-form-trigger { text-align: center; padding: 8px 0; }",
-      ".bh-write-comment-btn { background: none; border: 1px solid #ddd; color: #555; padding: 6px 20px; border-radius: 5px; font-size: 14px; cursor: pointer; transition: all 0.2s; }",
-      ".bh-write-comment-btn:hover { border-color: #999; color: #333; }",
-      ".bh-comment-form { background: #fff; border: 1px solid #ddd; border-radius: 5px; padding: 20px; }",
-      ".bh-comment-form-title { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: #333; margin: 0; }",
-      ".bh-form-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }",
-      ".bh-form-header .bh-comment-form-title { margin-bottom: 0; }",
-      /* User badge */
-      ".bh-user-badge { position: relative; display: flex; align-items: center; gap: 6px; cursor: default; }",
-      ".bh-user-badge-avatar { width: 24px; height: 24px; border-radius: 4px; }",
-      ".bh-user-badge-name { font-size: 13px; color: #555; }",
-      ".bh-user-tooltip { display: none; position: absolute; top: 100%; right: 0; margin-top: 6px; background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 10px 14px; min-width: 180px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); z-index: 10; font-size: 13px; }",
-      ".bh-user-badge:hover .bh-user-tooltip { display: block; }",
-      ".bh-user-tooltip-row { margin-bottom: 4px; color: #333; }",
-      ".bh-user-tooltip-row:last-child { margin-bottom: 0; }",
-      ".bh-user-tooltip-bio { color: #999; }",
-      ".bh-user-tooltip-row a { color: #555; text-decoration: none; word-break: break-all; }",
-      ".bh-user-tooltip-row a:hover { text-decoration: underline; }",
-      ".bh-form-row { margin-bottom: 12px; }",
-      ".bh-form-row label { display: block; font-size: 13px; color: #999; margin-bottom: 4px; }",
-      ".bh-required { color: #c00; }",
-      ".bh-optional { color: #bbb; font-size: 11px; }",
-      ".bh-hint { color: #bbb; font-size: 11px; }",
-      ".bh-form-row input, .bh-form-row textarea { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 14px; font-family: inherit; box-sizing: border-box; background: #fff; transition: border-color 0.2s; }",
-      ".bh-form-row input:focus, .bh-form-row textarea:focus { outline: none; border-color: #333; box-shadow: 0 0 0 2px rgba(0,0,0,0.08); }",
-      ".bh-form-row textarea { min-height: 100px; resize: vertical; }",
-      ".bh-form-identity { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }",
-      ".bh-form-identity .bh-form-row { margin-bottom: 0; }",
-      ".bh-reply-preview { font-size: 13px; color: #999; background: #fff; padding: 8px 12px; border-radius: 5px; border-left: 3px solid #999; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }",
-      ".bh-reply-cancel { background: none; border: none; color: #999; cursor: pointer; font-size: 12px; }",
-      ".bh-reply-cancel:hover { color: #333; }",
-      ".bh-submit-btn { display: inline-flex; align-items: center; gap: 8px; background: #333; color: #fff; border: none; padding: 8px 20px; border-radius: 5px; font-size: 14px; cursor: pointer; transition: background 0.2s; }",
-      ".bh-submit-btn:hover { background: #555; }",
-      ".bh-submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }",
-      ".bh-submit-btn .bh-spinner { display: none; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: bh-spin 0.6s linear infinite; }",
-      ".bh-submit-btn.bh-loading .bh-spinner { display: inline-block; }",
-      ".bh-submit-btn.bh-loading .bh-btn-text { opacity: 0.7; }",
-      "@keyframes bh-spin { to { transform: rotate(360deg); } }",
-      ".bh-form-msg { font-size: 13px; margin-top: 8px; }",
-      ".bh-form-msg.bh-success { color: #333; }",
-      ".bh-form-msg.bh-error { color: #c00; }",
-      ".bh-no-comments { text-align: center; color: #999; padding: 24px 0; font-size: 14px; }",
-      /* Markdown styles */
-      ".bh-comment-content code.bh-md-code { background: #f5f5f5; padding: 1px 4px; border-radius: 3px; font-size: 0.9em; }",
-      ".bh-comment-content pre.bh-md-pre { background: #f5f5f5; padding: 10px 12px; border-radius: 5px; overflow-x: auto; margin: 6px 0; }",
-      ".bh-comment-content pre.bh-md-pre code { background: none; padding: 0; font-size: 0.9em; }",
-      ".bh-comment-content blockquote.bh-md-bq { border-left: 3px solid #ddd; margin: 6px 0; padding: 4px 12px; color: #666; }",
-      ".bh-comment-content ul.bh-md-ul, .bh-comment-content ol.bh-md-ol { margin: 6px 0; padding-left: 20px; }",
-      ".bh-comment-content ul.bh-md-ul li, .bh-comment-content ol.bh-md-ol li { margin: 2px 0; }",
-      ".bh-comment-content img.bh-md-img { max-width: 100%; border-radius: 5px; margin: 6px 0; }",
-      ".bh-comment-content del { color: #999; }",
-      /* Sidebar comments */
-      ".ba-sidebar-comments { border-top: 1px solid #e1e4e8; padding-top: 16px; margin-top: 4px; }",
-      ".ba-sidebar-comments .ba-sc-item { margin-bottom: 4px; display: flex; align-items: flex-start; }",
-      ".ba-sidebar-comments .ba-sc-item .ba-sc-content { flex: 1; min-width: 0; font-size: 13px; color: #586069; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; cursor: pointer; border-radius: 3px; padding: 2px 4px; transition: all 0.2s; }",
-      ".ba-sidebar-comments .ba-sc-item .ba-sc-content:hover { color: #0366d6; background-color: #f1f8ff; }",
-      ".ba-sidebar-comments .ba-sc-meta { font-size: 12px; color: #586069; white-space: nowrap; flex-shrink: 0; padding-left: 6px; }",
-      /* Page reactions */
-      ".bh-page-reactions { margin-top: 16px; padding: 8px 0; display: flex; justify-content: flex-end; }",
-      ".bh-page-reactions .bh-page-react-btn { background: none; border: 1px solid #e0e0e0; font-size: 20px; cursor: pointer; padding: 8px 16px; border-radius: 24px; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s; filter: grayscale(1); opacity: 0.45; }",
-      ".bh-page-reactions .bh-page-react-btn:hover { filter: grayscale(0); opacity: 1; border-color: #ff6b6b; background: #fff5f5; }",
-      ".bh-page-reactions .bh-page-react-btn.bh-active { filter: grayscale(0); opacity: 1; border-color: #ff6b6b; background: #fff5f5; }",
-      ".bh-page-reactions .bh-page-react-count { font-size: 16px; color: #999; }",
-      ".bh-page-reactions .bh-page-react-btn.bh-active .bh-page-react-count { color: #e25555; }",
-      /* Markdown preview tabs */
-      ".bh-editor-tabs { display: flex; gap: 0; border-bottom: 1px solid #ddd; margin-bottom: 8px; }",
-      ".bh-editor-tab { background: none; border: none; border-bottom: 2px solid transparent; padding: 4px 12px; font-size: 13px; color: #999; cursor: pointer; transition: all 0.15s; }",
-      ".bh-editor-tab:hover { color: #555; }",
-      ".bh-editor-tab.bh-tab-active { color: #333; border-bottom-color: #333; }",
-      ".bh-md-preview { min-height: 100px; padding: 8px 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 14px; line-height: 1.6; color: #333; background: #fafafa; overflow-y: auto; max-height: 300px; word-break: break-word; }",
-      ".bh-md-preview p { margin: 0 0 8px; }",
-      ".bh-md-preview p:last-child { margin-bottom: 0; }",
-      ".bh-md-preview pre { background: #f5f5f5; padding: 10px 12px; border-radius: 5px; overflow-x: auto; margin: 6px 0; }",
-      ".bh-md-preview code { background: #f5f5f5; padding: 1px 4px; border-radius: 3px; font-size: 0.9em; }",
-      ".bh-md-preview pre code { background: none; padding: 0; }",
-      ".bh-md-preview blockquote { border-left: 3px solid #ddd; margin: 6px 0; padding: 4px 12px; color: #666; }",
-      ".bh-md-preview img { max-width: 100%; border-radius: 5px; }",
-      ".bh-md-preview a { color: #0366d6; }",
-      ".bh-md-preview ul, .bh-md-preview ol { margin: 6px 0; padding-left: 20px; }",
-      ".bh-md-hint { font-size: 11px; color: #bbb; margin-top: 4px; }",
-      ".bh-md-hint a { color: #bbb; text-decoration: none; }",
-      ".bh-md-hint a:hover { color: #999; }",
-    ].join("\n");
-    document.head.appendChild(style);
+    // Fallback: plain text with escaping
+    return '<p>' + escapeHtml(raw).replace(/\n/g, '<br>') + '</p>';
   }
 
   // ============================================================
@@ -1033,7 +838,7 @@
     var container = document.querySelector(config.selectors.postContainer);
     if (!container) return;
 
-    injectCommentStyles();
+    injectStyles();
 
     var bar = document.createElement("div");
     bar.className = "bh-page-reactions";
@@ -1056,10 +861,11 @@
       var active = myReactions.indexOf(emoji) !== -1;
       bar.innerHTML = '<button class="bh-page-react-btn' + (active ? ' bh-active' : '') +
         '" data-emoji="' + emoji + '" title="喜欢这篇文章">' +
-        emoji + (count > 0 ? ' <span class="bh-page-react-count">' + count + '</span>' : '') +
+        '<span class="bh-page-react-emoji">' + emoji + '</span>' +
+        '<span class="bh-page-react-count">' + (count > 0 ? count : '') + '</span>' +
         '</button>';
 
-      // Bind click with optimistic update (same pattern as comment reactions)
+      // Bind click with optimistic update
       var btn = bar.querySelector(".bh-page-react-btn");
       btn.addEventListener("click", function () {
         var isActive = btn.classList.contains("bh-active");
@@ -1067,24 +873,9 @@
 
         // Optimistic UI update
         var countEl = btn.querySelector(".bh-page-react-count");
-        var currentCount = countEl ? parseInt(countEl.textContent) : 0;
+        var currentCount = parseInt(countEl.textContent) || 0;
         var newCount = action === "add" ? currentCount + 1 : Math.max(0, currentCount - 1);
-        if (newCount > 0) {
-          if (countEl) {
-            countEl.textContent = newCount;
-          } else {
-            var span = document.createElement("span");
-            span.className = "bh-page-react-count";
-            span.textContent = newCount;
-            btn.appendChild(document.createTextNode(" "));
-            btn.appendChild(span);
-          }
-        } else if (countEl) {
-          if (countEl.previousSibling && countEl.previousSibling.nodeType === 3) {
-            countEl.previousSibling.remove();
-          }
-          countEl.remove();
-        }
+        countEl.textContent = newCount > 0 ? newCount : "";
         btn.classList.toggle("bh-active");
 
         // Fire and forget
@@ -1099,7 +890,7 @@
     var container = document.querySelector(config.selectors.postContainer);
     if (!container) return;
 
-    injectCommentStyles();
+    injectStyles();
 
     // Create comment section container
     var section = document.createElement("div");
@@ -1167,8 +958,13 @@
     if (trigger) trigger.style.display = "none";
     form.style.display = "";
     renderCommentForm(section, state, config, slug);
-    var textarea = form.querySelector("textarea");
-    if (textarea) textarea.focus();
+    if (state.me) {
+      var textarea = form.querySelector("textarea");
+      if (textarea) textarea.focus();
+    } else {
+      var emailInput = form.querySelector('input[name="email"]');
+      if (emailInput) emailInput.focus();
+    }
   }
 
   function hideCommentForm(section) {
@@ -1218,15 +1014,17 @@
     var avatar = generateAvatar(a.avatar_seed || "?", avatarSize);
     var blogUrl = normalizeBlogUrl(a.blog_url);
 
-    // Build tooltip for author hover: blog_url | bio
-    var tooltipParts = [];
-    if (blogUrl) tooltipParts.push(escapeHtml(blogUrl));
-    if (a.bio) tooltipParts.push(escapeHtml(a.bio));
-    var tooltip = tooltipParts.length > 0 ? ' title="' + tooltipParts.join(' | ') + '"' : '';
+    // Unified tooltip: nickname · blog (line 1), bio (line 2)
+    var authorTooltip = '<div class="bh-author-tooltip">' +
+      '<div class="bh-author-tooltip-name">' + escapeHtml(a.nickname || "匿名") +
+        (blogUrl ? ' · <a href="' + escapeHtml(blogUrl) + '" target="_blank" rel="noopener">' + escapeHtml(blogUrl.replace(/^https?:\/\//, '')) + '</a>' : '') +
+      '</div>' +
+      (a.bio ? '<div class="bh-author-tooltip-bio">' + escapeHtml(a.bio) + '</div>' : '') +
+    '</div>';
 
-    var authorTag = blogUrl ?
-      '<a class="bh-comment-author" href="' + escapeHtml(blogUrl) + '" target="_blank" rel="noopener"' + tooltip + '>' + escapeHtml(a.nickname || "匿名") + '</a>' :
-      '<span class="bh-comment-author"' + tooltip + '>' + escapeHtml(a.nickname || "匿名") + '</span>';
+    var authorName = blogUrl ?
+      '<a class="bh-comment-author" href="' + escapeHtml(blogUrl) + '" target="_blank" rel="noopener">' + escapeHtml(a.nickname || "匿名") + '</a>' :
+      '<span class="bh-comment-author">' + escapeHtml(a.nickname || "匿名") + '</span>';
 
     var replyRef = "";
     if (isReply && c.parent_id) {
@@ -1237,11 +1035,14 @@
     }
 
     return '<div class="bh-comment-item' + (isReply ? ' bh-comment-reply' : '') + '" data-id="' + c.id + '" id="comment-' + c.id + '">' +
-      '<img class="bh-comment-avatar" src="' + avatar + '" alt=""' +
-        ' style="width:' + avatarSize + 'px;height:' + avatarSize + 'px">' +
+      '<span class="bh-comment-author-wrap">' +
+        '<img class="bh-comment-avatar" src="' + avatar + '" alt=""' +
+          ' style="width:' + avatarSize + 'px;height:' + avatarSize + 'px">' +
+        authorTooltip +
+      '</span>' +
       '<div class="bh-comment-body">' +
         '<div class="bh-comment-header">' +
-          authorTag +
+          '<span class="bh-comment-author-wrap">' + authorName + authorTooltip + '</span>' +
           replyRef +
           '<span class="bh-comment-meta">' +
             '<span class="bh-comment-time">' + formatTime(c.created_at) + '</span>' +
@@ -1414,10 +1215,8 @@
     var identityFields = '';
 
     if (me && token) {
-      // Logged-in: show user badge in header with hover tooltip
+      // Logged-in: show user badge with unified tooltip (same as comment authors)
       var avatar = generateAvatar(me.nickname || '?', 24);
-      var tooltipLines = escapeHtml(me.nickname || '');
-      if (me.bio) tooltipLines += '\n' + escapeHtml(me.bio);
       var meBlogUrl = normalizeBlogUrl(me.blog_url);
       formHeader =
         '<div class="bh-form-header">' +
@@ -1425,25 +1224,26 @@
           '<div class="bh-user-badge">' +
             '<img class="bh-user-badge-avatar" src="' + avatar + '" alt="">' +
             '<span class="bh-user-badge-name">' + escapeHtml(me.nickname) + '</span>' +
-            '<div class="bh-user-tooltip">' +
-              '<div class="bh-user-tooltip-row"><strong>' + escapeHtml(me.nickname) + '</strong></div>' +
-              (me.bio ? '<div class="bh-user-tooltip-row bh-user-tooltip-bio">' + escapeHtml(me.bio) + '</div>' : '') +
-              (meBlogUrl ? '<div class="bh-user-tooltip-row"><a href="' + escapeHtml(meBlogUrl) + '" target="_blank" rel="noopener">' + escapeHtml(meBlogUrl) + '</a></div>' : '') +
+            '<span class="bh-user-badge-edit">编辑</span>' +
+            '<div class="bh-author-tooltip">' +
+              '<div class="bh-author-tooltip-name">' + escapeHtml(me.nickname) +
+                (meBlogUrl ? ' · <a href="' + escapeHtml(meBlogUrl) + '" target="_blank" rel="noopener">' + escapeHtml(meBlogUrl.replace(/^https?:\/\//, '')) + '</a>' : '') +
+              '</div>' +
+              (me.bio ? '<div class="bh-author-tooltip-bio">' + escapeHtml(me.bio) + '</div>' : '') +
             '</div>' +
           '</div>' +
         '</div>';
       identityFields = '<input type="hidden" name="has_token" value="1">';
     } else {
+      // First-time: all fields visible, email first (auto-fill on blur)
       formHeader = '<div class="bh-comment-form-title">写评论</div>';
       identityFields =
-        '<div class="bh-form-identity">' +
-          '<div class="bh-form-row"><label>昵称 <span class="bh-required">*</span></label><input type="text" name="nickname" placeholder="你的名字"></div>' +
-          '<div class="bh-form-row"><label>邮箱 <span class="bh-required">*</span> <span class="bh-hint">不公开</span></label><input type="email" name="email" placeholder="your@email.com" required></div>' +
-        '</div>' +
+        '<div class="bh-form-row"><label>邮箱 <span class="bh-required">*</span> <span class="bh-hint">唯一身份标识，不会公开</span></label><input type="email" name="email" placeholder="your@email.com" required></div>' +
         '<div class="bh-form-identity" style="margin-top:12px">' +
+          '<div class="bh-form-row"><label>昵称 <span class="bh-required">*</span> <span class="bh-label-actions"><a href="#" class="bh-action-random" data-target="nickname">随机来个</a><span class="bh-action-sep">|</span><a href="#" class="bh-action-clear" data-target="nickname">清空</a></span></label><input type="text" name="nickname" placeholder="你怎么称呼？"></div>' +
           '<div class="bh-form-row"><label>博客地址 <span class="bh-optional">可选</span></label><input type="text" name="blog_url" placeholder="example.com"></div>' +
-          '<div class="bh-form-row"><label>个性签名 <span class="bh-optional">可选</span></label><input type="text" name="bio" placeholder="一句话介绍自己"></div>' +
-        '</div>';
+        '</div>' +
+        '<div class="bh-form-row" style="margin-top:12px"><label>个性签名 <span class="bh-optional">可选</span> <span class="bh-label-actions"><a href="#" class="bh-action-random" data-target="bio">随机来个</a><span class="bh-action-sep">|</span><a href="#" class="bh-action-clear" data-target="bio">清空</a></span></label><input type="text" name="bio" placeholder="一句话介绍自己"></div>';
     }
 
     var replyPreview = "";
@@ -1464,13 +1264,23 @@
           '<button type="button" class="bh-editor-tab bh-tab-active" data-tab="write">编写</button>' +
           '<button type="button" class="bh-editor-tab" data-tab="preview">预览</button>' +
         '</div>' +
-        '<textarea name="content" placeholder="写下你的想法...支持 Markdown" maxlength="1024" required></textarea>' +
+        '<label style="font-size:13px;color:#999;margin-bottom:4px;display:block">内容 <span class="bh-required">*</span></label>' +
+        '<textarea name="content" placeholder="留下你的想法，让更多人看到不一样的视角 ✨&#10;Markdown 基础语法随意用 :)" maxlength="1024" required></textarea>' +
         '<div class="bh-md-preview" style="display:none"></div>' +
-        '<div class="bh-md-hint">支持 <a href="https://commonmark.org/help/" target="_blank" rel="noopener">Markdown</a> 语法</div>' +
       '</div>' +
-      '<button type="button" class="bh-submit-btn"><span class="bh-spinner"></span><span class="bh-btn-text">提交评论</span></button>' +
+      '<div style="text-align:right;margin-top:12px"><button type="button" class="bh-submit-btn">提交评论</button></div>' +
       '<div class="bh-form-msg"></div>' +
+      '<div class="bh-form-overlay" style="display:none"><div class="bh-form-overlay-inner"><span class="bh-overlay-spinner"></span>loading...</div></div>' +
       '<div style="position:absolute;left:-9999px"><input type="text" name="website" tabindex="-1" autocomplete="off"></div>';
+
+    // Profile panel on badge click
+    var badge = form.querySelector(".bh-user-badge");
+    if (badge && me) {
+      badge.addEventListener("click", function (e) {
+        e.stopPropagation();
+        showProfilePanel(state, config, section);
+      });
+    }
 
     // Cancel reply
     var cancelBtn = form.querySelector(".bh-reply-cancel");
@@ -1481,22 +1291,21 @@
       });
     }
 
-    // Email onBlur lookup
+    // Email onBlur: lookup existing user or auto-fill nickname from email
     var emailInput = form.querySelector('input[name="email"]');
     if (emailInput) {
       emailInput.addEventListener("blur", function () {
         var email = this.value.trim();
-        if (!email) return;
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
+        var nn = form.querySelector('input[name="nickname"]');
+        var bl = form.querySelector('input[name="blog_url"]');
+        var bio = form.querySelector('input[name="bio"]');
         apiLookupCommenter(config, email).then(function (data) {
           if (data) {
-            // Pre-fill fields
-            var nn = form.querySelector('input[name="nickname"]');
-            var bl = form.querySelector('input[name="blog_url"]');
-            var bio = form.querySelector('input[name="bio"]');
-            if (nn && !nn.value) nn.value = data.nickname || "";
+            // Existing user: fill all fields
+            if (nn) nn.value = data.nickname || "";
             if (bl && !bl.value) bl.value = data.blog_url || "";
             if (bio && !bio.value) bio.value = data.bio || "";
-            // Show welcome back
             var msg = form.querySelector(".bh-form-msg");
             if (msg) {
               msg.className = "bh-form-msg bh-success";
@@ -1504,6 +1313,60 @@
             }
           }
         });
+      });
+    }
+
+    // Random / Clear actions
+    var RANDOM_NICKNAMES = [
+      "路过的猫", "匿名侠", "吃瓜群众", "深夜读者", "代码诗人", "摸鱼达人", "赛博游民", "键盘侠", "月球访客", "时间旅人",
+      "咖啡续命者", "星际漫游", "像素猎人", "量子纠缠", "午夜编译", "佛系青年", "电子幽灵", "云端漫步", "Bug猎手", "数据巫师",
+      "暗号是猫", "脑洞大开", "像风一样", "无名之辈", "夜猫子", "追光者", "半糖主义", "咸鱼翻身", "平行世界", "代码民工",
+      "奶茶星人", "逻辑怪", "退堂鼓选手", "宇宙尘埃", "梦境建筑师", "信号满格", "ctrl+z人生", "默认头像", "随机路人", "404少年",
+      "异步等待", "光年之外", "回调地狱", "堆栈溢出", "空指针", "递归少女", "浮点误差", "未定义行为", "野生程序员", "编译通过",
+      "今天不加班", "自由变量", "薛定谔的猫", "二进制诗人", "开源信徒"
+    ];
+    var RANDOM_BIOS = [
+      "人生苦短，及时行乐", "在代码与咖啡之间徘徊", "保持好奇心", "生活不止眼前的 Bug", "半夜还在刷博客的人",
+      "路过，留个脚印", "今天也要开心鸭", "佛系冲浪选手", "永远好奇，永远热泪盈眶", "一个认真摸鱼的人",
+      "代码是写给人看的", "在自己的时区里努力", "生活就是不断重构", "把日子过成诗", "灵感来自凌晨三点",
+      "世界很大，先写完这行代码", "用代码丈量世界", "技术宅拯救世界", "不是在调试就是在写Bug", "永远年轻永远热泪盈眶",
+      "对世界充满善意", "做有趣的事，交有趣的人", "在互联网上留下痕迹", "今天的我比昨天厉害一点点", "正在加载人生...",
+      "Hello World 说了好多年", "此刻即永恒", "万物皆可编程", "在信息洪流中冲浪", "一枚安静的开发者",
+      "从入门到放弃再到入门", "写字的时候最平静", "读书喝茶写代码", "生活需要仪式感", "认真生活，快乐coding",
+      "用0和1构建梦想", "debug是一种生活态度", "保持学习，保持谦逊", "简单生活，深度思考", "做自己喜欢的事",
+      "在这里记录成长", "看见世界的另一面", "温柔且有力量", "享受每一个灵光乍现", "明天的我一定更强",
+      "喜欢安静也喜欢热闹", "一杯咖啡一行代码", "向着光走", "慢慢来比较快", "不完美但真实",
+      "永远对新事物好奇", "脑子里全是奇怪想法", "偶尔写字偶尔发呆", "人间观察员", "数字游民在路上"
+    ];
+    var randomBags = {};
+    function pickRandom(pool, key) {
+      if (!randomBags[key] || randomBags[key].length === 0) {
+        randomBags[key] = pool.slice();
+        for (var i = randomBags[key].length - 1; i > 0; i--) {
+          var j = Math.floor(Math.random() * (i + 1));
+          var tmp = randomBags[key][i]; randomBags[key][i] = randomBags[key][j]; randomBags[key][j] = tmp;
+        }
+      }
+      return randomBags[key].pop();
+    }
+    var randomLinks = form.querySelectorAll(".bh-action-random");
+    for (var ri = 0; ri < randomLinks.length; ri++) {
+      randomLinks[ri].addEventListener("click", function (e) {
+        e.preventDefault();
+        var target = this.getAttribute("data-target");
+        var input = form.querySelector('input[name="' + target + '"]');
+        if (!input) return;
+        var pool = target === "nickname" ? RANDOM_NICKNAMES : RANDOM_BIOS;
+        input.value = pickRandom(pool, target);
+      });
+    }
+    var clearLinks = form.querySelectorAll(".bh-action-clear");
+    for (var ci = 0; ci < clearLinks.length; ci++) {
+      clearLinks[ci].addEventListener("click", function (e) {
+        e.preventDefault();
+        var target = this.getAttribute("data-target");
+        var input = form.querySelector('input[name="' + target + '"]');
+        if (input) input.value = "";
       });
     }
 
@@ -1596,20 +1459,19 @@
         blogUrl = normalizeBlogUrl(blogUrl);
       }
 
-      // Show loading + solve PoW challenge
-      submitBtn.classList.add("bh-loading");
+      // Show loading overlay
+      var overlay = form.querySelector(".bh-form-overlay");
+      overlay.style.display = "";
       submitBtn.disabled = true;
       msgEl.className = "bh-form-msg";
-      msgEl.textContent = "验证中...";
+      msgEl.textContent = "";
 
       apiGetChallenge(config).then(function (challengeData) {
         if (!challengeData) throw new Error("无法获取验证信息");
-        msgEl.textContent = "计算中...";
         return solveChallenge(challengeData.challenge).then(function (answer) {
           return { challenge: challengeData.challenge, answer: answer };
         });
       }).then(function (proof) {
-        msgEl.textContent = "提交中...";
         return apiPostComment(config, {
           site_id: config.siteId,
           page_slug: slug,
@@ -1624,7 +1486,7 @@
           answer: proof.answer,
         });
       }).then(function (resp) {
-        submitBtn.classList.remove("bh-loading");
+        overlay.style.display = "none";
         submitBtn.disabled = false;
 
         if (resp.ok) {
@@ -1647,7 +1509,7 @@
           msgEl.textContent = resp.error ? resp.error.message : "提交失败";
         }
       }).catch(function (err) {
-        submitBtn.classList.remove("bh-loading");
+        overlay.style.display = "none";
         submitBtn.disabled = false;
         msgEl.className = "bh-form-msg bh-error";
         msgEl.textContent = err.message || "提交失败";
@@ -1656,20 +1518,90 @@
   }
 
   // ============================================================
-  // 6b. Sidebar Comment Widgets
+  // 6a-3. Profile Panel
   // ============================================================
 
-  function sidebarCommentTime(ts) {
-    if (!ts) return "";
-    var d = new Date(ts);
-    var now = new Date();
-    var diff = Math.floor((now - d) / 1000);
-    if (diff < 60) return "刚刚";
-    if (diff < 3600) return Math.floor(diff / 60) + "分钟前";
-    if (diff < 86400) return Math.floor(diff / 3600) + "小时前";
-    if (diff < 2592000) return Math.floor(diff / 86400) + "天前";
-    return (d.getMonth() + 1) + "/" + d.getDate();
+  function apiUpdateProfile(config, data) {
+    var base = commentApiBase(config);
+    return fetch(base + "/commenter/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(data),
+    }).then(function (r) { return r.json(); })
+      .catch(function () { return { ok: false, error: { message: "Network error" } }; });
   }
+
+  function showProfilePanel(state, config, section) {
+    var me = state.me;
+    if (!me) return;
+
+    var panel = document.createElement("div");
+    panel.className = "bh-profile-panel";
+    panel.innerHTML =
+      '<div class="bh-profile-card">' +
+        '<h3>个人资料</h3>' +
+        '<div class="bh-profile-field"><label>昵称</label><input type="text" name="nickname" value="' + escapeHtml(me.nickname || '') + '" disabled></div>' +
+        '<div class="bh-profile-field"><label>邮箱 <span style="color:#bbb;font-size:11px">仅自己可见，唯一身份标识</span></label><input type="email" name="email" value="' + escapeHtml(me.email || '') + '" disabled></div>' +
+        '<div class="bh-profile-field"><label>博客地址</label><input type="text" name="blog_url" value="' + escapeHtml(me.blog_url || '') + '" placeholder="example.com"></div>' +
+        '<div class="bh-profile-field"><label>个性签名</label><input type="text" name="bio" value="' + escapeHtml(me.bio || '') + '" placeholder="一句话介绍自己"></div>' +
+        '<div class="bh-profile-actions">' +
+          '<button type="button" class="bh-profile-cancel">取消</button>' +
+          '<button type="button" class="bh-profile-save">保存</button>' +
+        '</div>' +
+        '<div class="bh-profile-msg"></div>' +
+      '</div>';
+
+    document.body.appendChild(panel);
+
+    // Close on backdrop click
+    panel.addEventListener("click", function (e) {
+      if (e.target === panel) panel.remove();
+    });
+
+    // Cancel button
+    panel.querySelector(".bh-profile-cancel").addEventListener("click", function () {
+      panel.remove();
+    });
+
+    // Save button
+    panel.querySelector(".bh-profile-save").addEventListener("click", function () {
+      var card = panel.querySelector(".bh-profile-card");
+      var nickname = card.querySelector('input[name="nickname"]').value.trim();
+      var blogUrl = card.querySelector('input[name="blog_url"]').value.trim();
+      var bio = card.querySelector('input[name="bio"]').value.trim();
+      var msg = panel.querySelector(".bh-profile-msg");
+
+      if (blogUrl) blogUrl = normalizeBlogUrl(blogUrl);
+
+      apiUpdateProfile(config, {
+        nickname: nickname,
+        blog_url: blogUrl,
+        bio: bio,
+      }).then(function (resp) {
+        if (resp.ok) {
+          // Update local state
+          state.me.nickname = nickname;
+          state.me.blog_url = blogUrl;
+          state.me.bio = bio;
+          msg.style.color = "#28a745";
+          msg.textContent = "已保存";
+          setTimeout(function () {
+            panel.remove();
+            // Re-render form to reflect new name
+            if (section) renderCommentForm(section, state, config);
+          }, 800);
+        } else {
+          msg.style.color = "#c00";
+          msg.textContent = resp.error ? resp.error.message : "保存失败";
+        }
+      });
+    });
+  }
+
+  // ============================================================
+  // 6b. Sidebar Comment Widgets
+  // ============================================================
 
   function sidebarCommentLink(c) {
     var author = c.author ? c.author.nickname : "匿名";
@@ -1679,7 +1611,7 @@
 
     // Right side: time / emoji
     var metaParts = [];
-    var time = sidebarCommentTime(c.created_at);
+    var time = formatTime(c.created_at, true);
     if (time) metaParts.push(time);
     var reactions = c.reactions || [];
     for (var i = 0; i < reactions.length; i++) {
@@ -1691,31 +1623,14 @@
       escapeHtml(display) + '</span>' + meta;
   }
 
-  function renderRecentComments(config, comments) {
+  function renderSidebarComments(config, comments, mountId, title) {
     if (!comments || comments.length === 0) return;
-    var mount = document.querySelector("#bh-recent-comments-mount") ||
+    var mount = document.querySelector(mountId) ||
                 document.querySelector(config.selectors.sidebarMount);
     if (!mount) return;
 
     var html = '<div class="sidebar-section ba-sidebar-comments">';
-    html += '<div class="sidebar-title">Recent Comments</div>';
-    for (var i = 0; i < comments.length; i++) {
-      html += '<div class="ba-sc-item">' + sidebarCommentLink(comments[i]) + '</div>';
-    }
-    html += '</div>';
-    var el = createElementFromHTML(html);
-    bindSidebarCommentClicks(el);
-    mount.appendChild(el);
-  }
-
-  function renderHotComments(config, comments) {
-    if (!comments || comments.length === 0) return;
-    var mount = document.querySelector("#bh-hot-comments-mount") ||
-                document.querySelector(config.selectors.sidebarMount);
-    if (!mount) return;
-
-    var html = '<div class="sidebar-section ba-sidebar-comments">';
-    html += '<div class="sidebar-title">Hot Comments</div>';
+    html += '<div class="sidebar-title">' + escapeHtml(title) + '</div>';
     for (var i = 0; i < comments.length; i++) {
       html += '<div class="ba-sc-item">' + sidebarCommentLink(comments[i]) + '</div>';
     }
@@ -1908,17 +1823,18 @@
       );
     }
 
-    // Comment section + page reactions (post pages only)
-    // Auto-detect: if showComments not explicitly set, probe backend
+    // Page reactions (always available on post pages, independent of comment mode)
     if (pageType === "post") {
       var commentSlug = getCurrentSlug();
+      promises.push(Promise.resolve().then(function () {
+        renderPageReactions(config, commentSlug);
+      }));
+
+      // Comment section — only if comments enabled
       if (config.features.showComments) {
-        promises.push(
-          Promise.resolve().then(function () {
-            renderPageReactions(config, commentSlug);
-            renderCommentSection(config, commentSlug);
-          })
-        );
+        promises.push(Promise.resolve().then(function () {
+          renderCommentSection(config, commentSlug);
+        }));
       } else {
         // Auto-detect from backend
         promises.push(
@@ -1926,7 +1842,6 @@
             .then(function (r) { return r.json(); })
             .then(function (d) {
               if (d.ok && d.data && d.data.enabled) {
-                renderPageReactions(config, commentSlug);
                 renderCommentSection(config, commentSlug);
               }
             })
@@ -1935,18 +1850,19 @@
       }
     }
 
-    // Sidebar: recent comments + hot comments (if comments enabled)
-    var sidebarCommentPromise = fetch(commentApiBase(config) + "/comments/config", { credentials: "same-origin" })
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (!d.ok || !d.data || !d.data.enabled) return;
-        return Promise.all([
-          apiRecentComments(config, 5).then(function (data) { renderRecentComments(config, data); }),
-          apiHotComments(config, 5).then(function (data) { renderHotComments(config, data); }),
-        ]);
-      })
-      .catch(function () { /* silent */ });
-    promises.push(sidebarCommentPromise);
+    // Sidebar: recent comments + hot comments (only if comments enabled)
+    promises.push(
+      fetch(commentApiBase(config) + "/comments/config", { credentials: "same-origin" })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok || !d.data || !d.data.enabled) return;
+          return Promise.all([
+            apiRecentComments(config, 5).then(function (data) { renderSidebarComments(config, data, "#bh-recent-comments-mount", "Recent Comments"); }),
+            apiHotComments(config, 5).then(function (data) { renderSidebarComments(config, data, "#bh-hot-comments-mount", "Hot Comments"); }),
+          ]);
+        })
+        .catch(function () { /* silent */ })
+    );
 
     // Execute all in parallel
     Promise.all(promises).catch(function () {

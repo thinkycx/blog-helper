@@ -18,9 +18,11 @@ type Commenter struct {
 	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
 }
 
-// CommenterPublic is the public-facing subset of Commenter (no email/IP/UA/FP).
+// CommenterPublic is the public-facing subset of Commenter (no IP/UA/FP).
+// Email is only populated for "me" (self-view via token).
 type CommenterPublic struct {
 	ID         int64  `json:"id"`
+	Email      string `json:"email,omitempty"`
 	Nickname   string `json:"nickname"`
 	AvatarSeed string `json:"avatar_seed"`
 	BlogURL    string `json:"blog_url"`

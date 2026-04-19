@@ -55,7 +55,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
 /* ── Layout ── */
 .dash{max-width:1360px;margin:0 auto;padding:16px 20px}
 .row{display:grid;gap:14px;margin-bottom:14px}
-.row-stats{grid-template-columns:1fr 1fr 1fr 1fr}
+.row-stats{grid-template-columns:repeat(6,1fr)}
 .row-chart{grid-template-columns:1fr}
 .row-mid{grid-template-columns:1fr 1fr}
 .row-mid3{grid-template-columns:1fr 280px 1fr}
@@ -122,7 +122,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
 .pgr-btns{display:flex;gap:4px}
 
 /* ── Tab panel ── */
-.tp{display:none}.tp.on{display:block}
+.tp{display:none;min-height:300px}.tp.on{display:block}
 .tp-tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:12px}
 .tp-tab{padding:6px 14px;font-size:12px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;
   margin-bottom:-2px;transition:all 0.15s;font-weight:500;background:none;border-top:none;border-left:none;border-right:none}
@@ -186,6 +186,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
     <div class="c c-stat" id="c-active"><div class="c-h"><span class="c-t">Active Visitors</span></div><div id="d-active" class="ld">-</div></div>
     <div class="c c-stat" id="c-totalpv"><div class="c-h"><span class="c-t" id="lbl-pv">Total PV</span></div><div id="d-totalpv" class="ld">-</div></div>
     <div class="c c-stat" id="c-totaluv"><div class="c-h"><span class="c-t" id="lbl-uv" title="UV = COUNT(DISTINCT fingerprint). Visitors without fingerprint are counted as 1.">Total UV</span></div><div id="d-totaluv" class="ld">-</div></div>
+    <div class="c c-stat" id="c-likes"><div class="c-h"><span class="c-t" id="lbl-likes">❤️ Article Likes</span></div><div id="d-likes" class="ld">-</div></div>
+    <div class="c c-stat" id="c-commenters"><div class="c-h"><span class="c-t" id="lbl-commenters">Commenters</span></div><div id="d-commenters" class="ld">-</div></div>
     <div class="c c-stat" id="c-health"><div class="c-h"><span class="c-t">Uptime</span></div><div id="d-health" class="ld">-</div></div>
   </div>
 
@@ -226,10 +228,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
       <div class="tp-tabs">
         <button class="tp-tab" id="tab-vis" onclick="switchTab('vis')">Visitors</button>
         <button class="tp-tab on" id="tab-views" onclick="switchTab('views')">Raw Views</button>
+        <button class="tp-tab" id="tab-cmt" onclick="switchTab('cmt')">Comments <span id="cmt-tab-info" style="font-weight:400"></span></button>
         <span class="tp-hint" id="data-hint"></span>
       </div>
       <div class="tp" id="p-vis"><div id="d-vis"><div class="ld">Loading...</div></div></div>
       <div class="tp on" id="p-views"><div id="d-views"><div class="ld">Loading...</div></div></div>
+      <div class="tp" id="p-cmt"><div id="d-cmt"><div class="ld">Loading...</div></div></div>
     </div>
   </div>
 </div>
@@ -269,6 +273,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
   function h(s){ var d=document.createElement("div"); d.appendChild(document.createTextNode(s||"")); return d.innerHTML; }
   function cut(s,n){ return s && s.length>n ? s.slice(0,n)+"..." : (s||""); }
   function num(n){ return (n||0).toLocaleString(); }
+  function parseUA(ua){
+    if(!ua)return"-";
+    var os="",br="";
+    if(/iPhone/.test(ua))os="iPhone";
+    else if(/iPad/.test(ua))os="iPad";
+    else if(/Android/.test(ua))os="Android";
+    else if(/Mac OS X/.test(ua))os="Mac";
+    else if(/Windows/.test(ua))os="Win";
+    else if(/Linux/.test(ua))os="Linux";
+    else if(/CrOS/.test(ua))os="ChromeOS";
+    var m;
+    if((m=ua.match(/Edg(?:e)?\/(\d+)/)))br="Edge "+m[1];
+    else if((m=ua.match(/OPR\/(\d+)/)))br="Opera "+m[1];
+    else if((m=ua.match(/Firefox\/(\d+)/)))br="Firefox "+m[1];
+    else if(/Chrome\//.test(ua)&&(m=ua.match(/Chrome\/(\d+)/)))br="Chrome "+m[1];
+    else if(/Safari\//.test(ua)&&(m=ua.match(/Version\/(\d+)/)))br="Safari "+m[1];
+    else if((m=ua.match(/bot|crawl|spider/i)))br="Bot";
+    if(!os&&!br)return cut(ua,25);
+    return[os,br].filter(Boolean).join(" · ");
+  }
   function pad2(n){ return n<10?"0"+n:""+n; }
 
   // UTC → local timezone
@@ -331,8 +355,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
     S.tab=t;
     $("tab-vis").className="tp-tab"+(t==="vis"?" on":"");
     $("tab-views").className="tp-tab"+(t==="views"?" on":"");
+    $("tab-cmt").className="tp-tab"+(t==="cmt"?" on":"");
     $("p-vis").className="tp"+(t==="vis"?" on":"");
     $("p-views").className="tp"+(t==="views"?" on":"");
+    $("p-cmt").className="tp"+(t==="cmt"?" on":"");
+    if(t==="cmt"&&!S._cmtLoaded){S._cmtLoaded=true;loadCmt();}
   };
 
   // ── Button group builder ──
@@ -352,6 +379,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
     var lbl=pLabel(S.period);
     $("lbl-pv").textContent="Total PV ("+lbl+")";
     $("lbl-uv").textContent="Total UV ("+lbl+")";
+    $("lbl-likes").textContent="\u2764\ufe0f Article Likes ("+lbl+")";
+    $("lbl-commenters").textContent="Commenters ("+lbl+")";
     $("lbl-plat").textContent="Platforms ("+lbl+")";
     var d=pDays(S.period); $("data-hint").textContent="Last "+d+(d===1?" day":" days");
   }
@@ -359,9 +388,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
   function loadSummary(){
     var q={days:pDays(S.period),site_id:S.site}; if(S.slug)q.slug=S.slug;
     capi("analytics/summary?"+qs(q)).then(function(d){
-      var pv=$("d-totalpv"), uv=$("d-totaluv");
+      var pv=$("d-totalpv"), uv=$("d-totaluv"), lk=$("d-likes"), cu=$("d-commenters");
       pv.className=""; pv.innerHTML='<div class="stat-row"><span class="stat-v">'+num(d.pv)+'</span><span class="stat-l">page views</span></div>';
       uv.className=""; uv.innerHTML='<div class="stat-row"><span class="stat-v">'+num(d.uv)+'</span><span class="stat-l">unique visitors</span></div>';
+      lk.className=""; lk.innerHTML='<div class="stat-row"><span class="stat-v">'+num(d.likes)+'</span><span class="stat-l">total likes</span></div>';
+      cu.className=""; cu.innerHTML='<div class="stat-row"><span class="stat-v">'+num(d.commenters)+'</span><span class="stat-l">comment users</span></div>';
     }).catch(function(e){
       $("d-totalpv").className="err"; $("d-totalpv").textContent=e.message;
       $("d-totaluv").className="err"; $("d-totaluv").textContent=e.message;
@@ -502,7 +533,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
           out+='<tr><td class="td-time">'+h(toLocal(r.created_at))+'</td>'+
             '<td><a href="#" onclick="drillSlug(\''+h(r.page_slug).replace(/'/g,"\\'")+'\');return false">'+h(r.page_title||r.page_slug)+'</a></td>'+
             '<td class="td-ip">'+h(r.ip)+'</td><td class="td-ref">'+h(r.referrer||"-")+'</td>'+
-            '<td class="td-ua">'+h(r.user_agent)+'</td></tr>';
+            '<td class="td-ua" title="'+h(r.user_agent)+'">'+parseUA(r.user_agent)+'</td></tr>';
         }
         out+='</table></div>'+pgr(d.total,d.limit,d.offset,"vpg");
         el.innerHTML=out;
@@ -511,11 +542,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
     }
     api("analytics/visitors?"+qs({days:pDays(S.period),limit:S.rLim,offset:S.rOff,site_id:S.site})).then(function(data){
       if(!data||!data.length){el.innerHTML='<div class="emp">No visitors yet</div>';return;}
-      var out='<div class="tbl-w"><table class="tbl"><tr><th>Fingerprint</th><th>Last Page</th><th>IP</th><th>PV</th><th>Last Seen</th></tr>';
+      var hasUA=data.some(function(v){return v.last_ua;});
+      var out='<div class="tbl-w"><table class="tbl"><tr><th>Fingerprint</th><th>Last Page</th><th>IP</th>'+(hasUA?'<th>UA</th>':'')+'<th>PV</th><th>Last Seen</th></tr>';
       for(var i=0;i<data.length;i++){var v=data[i];
         out+='<tr><td class="td-fp"><a href="#" onclick="viewFp(\''+h(v.fingerprint)+'\');return false" title="'+h(v.fingerprint)+'">'+h(v.fingerprint.slice(0,8))+'</a></td>'+
           '<td title="'+h(v.last_page)+'">'+h(v.last_page_title||v.last_page)+'</td>'+
           '<td class="td-ip">'+h(v.last_ip)+'</td>'+
+          (hasUA?'<td class="td-ua" title="'+h(v.last_ua)+'">'+parseUA(v.last_ua)+'</td>':'')+
           '<td>'+v.page_views+'</td>'+
           '<td class="td-time">'+h(toLocal(v.last_seen))+'</td></tr>';
       }
@@ -538,7 +571,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
           '<td class="td-ip">'+h(r.ip)+'</td>'+
           '<td class="td-fp"><a href="#" onclick="viewFp(\''+h(r.fingerprint)+'\');return false" title="'+h(r.fingerprint)+'">'+h(r.fingerprint.slice(0,8))+'</a></td>'+
           '<td class="td-ref">'+h(r.referrer||"-")+'</td>'+
-          '<td class="td-ua">'+h(r.user_agent)+'</td></tr>';
+          '<td class="td-ua" title="'+h(r.user_agent)+'">'+parseUA(r.user_agent)+'</td></tr>';
       }
       out+='</table></div>'+pgr(d.total,d.limit,d.offset,"vwpg");
       el.innerHTML=out;
@@ -554,6 +587,160 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
       '</div></div>';
   }
 
+  // ── Comments management ──
+  var cmtState={tab:"all",off:0,lim:20,mode:"",pending:0,usrOff:0,usrLim:20};
+
+  function loadCmt(){
+    api("comments/mode").then(function(d){cmtState.mode=d.mode;renderCmtPanel();loadCmtData();}).catch(function(){cmtState.mode="unknown";renderCmtPanel();loadCmtData();});
+  }
+
+  function renderCmtPanel(){
+    var el=$("d-cmt");
+    var modeHtml='<select id="cmt-mode" class="inp" style="width:auto" onchange="setCmtMode(this.value)">';
+    var modes=[["off","Off"],["auto-approve","Auto-approve"],["moderation","Moderation"]];
+    for(var i=0;i<modes.length;i++) modeHtml+='<option value="'+modes[i][0]+'"'+(cmtState.mode===modes[i][0]?' selected':'')+'>'+modes[i][1]+'</option>';
+    modeHtml+='</select>';
+    el.innerHTML='<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">'+
+      '<button class="btn btn-s btn-g'+(cmtState.tab==="all"?" on":"")+'" onclick="cmtTab(\'all\')">All</button>'+
+      '<button class="btn btn-s btn-g'+(cmtState.tab==="pending"?" on":"")+'" onclick="cmtTab(\'pending\')">Pending<span id="cmt-pending-n"></span></button>'+
+      '<button class="btn btn-s btn-g'+(cmtState.tab==="users"?" on":"")+'" onclick="cmtTab(\'users\')">Commenters</button>'+
+      '<span style="margin-left:auto;display:flex;align-items:center;gap:6px"><span class="c-t">Mode:</span>'+modeHtml+'</span></div>'+
+      '<div id="cmt-reply-box" style="display:none;margin-bottom:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
+          '<span style="font-size:12px;font-weight:600;color:var(--muted)">Reply as Author</span>'+
+          '<button class="btn btn-s btn-g" onclick="cmtReplyCancel()">Cancel</button></div>'+
+        '<textarea id="cmt-reply-ta" class="inp" style="width:100%;min-height:80px;resize:vertical;font-family:inherit;font-size:13px" placeholder="Markdown supported..."></textarea>'+
+        '<div style="text-align:right;margin-top:8px"><button class="btn btn-s" onclick="cmtReplySend()">Send</button></div>'+
+      '</div>'+
+      '<div id="cmt-list"><div class="ld">Loading...</div></div>';
+  }
+
+  function loadCmtData(){
+    var el=$("cmt-list"); if(!el)return;
+    if(cmtState.tab==="users"){
+      api("commenters/all?"+qs({limit:cmtState.usrLim,offset:cmtState.usrOff})).then(function(d){
+        if(!d.commenters||!d.commenters.length){el.innerHTML='<div class="emp">No commenters</div>';return;}
+        var out='<div class="tbl-w"><table class="tbl"><tr><th>ID</th><th>Nickname</th><th>Email</th><th>Blog</th><th>Bio</th><th>Reg IP</th><th>Fingerprint</th><th>UA</th><th>Created</th><th>Last Seen</th></tr>';
+        for(var i=0;i<d.commenters.length;i++){var u=d.commenters[i];
+          out+='<tr><td>'+u.id+'</td><td>'+h(u.nickname)+'</td><td style="font-size:11px">'+h(u.email)+'</td>'+
+            '<td style="font-size:11px">'+h(u.blog_url||"-")+'</td><td style="font-size:11px">'+h(cut(u.bio,30)||"-")+'</td>'+
+            '<td class="td-ip">'+h(u.reg_ip||"-")+'</td>'+
+            '<td class="td-fp" title="'+h(u.reg_fp)+'">'+h((u.reg_fp||"").slice(0,8)||"-")+'</td>'+
+            '<td class="td-ua" title="'+h(u.reg_ua)+'">'+parseUA(u.reg_ua)+'</td>'+
+            '<td class="td-time">'+h(toLocal(u.created_at))+'</td>'+
+            '<td class="td-time">'+h(u.last_seen_at?toLocal(u.last_seen_at):"-")+'</td></tr>';
+        }
+        out+='</table></div>'+pgr(d.total,d.limit,d.offset,"usrPg");
+        el.innerHTML=out;
+      }).catch(function(e){el.innerHTML='<div class="err">'+h(e.message)+'</div>';});
+      return;
+    }
+    if(cmtState.tab==="pending"){
+      api("comments/pending?site_id="+encodeURIComponent(S.site)).then(function(data){
+        cmtState.pending=data.length;updPendingBadge();
+        if(!data.length){el.innerHTML='<div class="emp">No pending comments</div>';return;}
+        el.innerHTML=renderCmtTable(data,true);
+      }).catch(function(e){el.innerHTML='<div class="err">'+h(e.message)+'</div>';});
+    }else{
+      api("comments/all?"+qs({site_id:S.site,limit:cmtState.lim,offset:cmtState.off})).then(function(d){
+        if(!d.comments||!d.comments.length){el.innerHTML='<div class="emp">No comments</div>';return;}
+        el.innerHTML=renderCmtTable(d.comments,false)+pgr(d.total,d.limit,d.offset,"cmtPg");
+      }).catch(function(e){el.innerHTML='<div class="err">'+h(e.message)+'</div>';});
+    }
+    loadCmtCounts();
+  }
+
+  function loadCmtCounts(){
+    api("comments/pending?site_id="+encodeURIComponent(S.site)).then(function(data){cmtState.pending=data.length;updPendingBadge();updTabInfo();}).catch(function(){});
+    api("comments/all?"+qs({site_id:S.site,limit:1,offset:0})).then(function(d){cmtState.totalCmt=d.total;updTabInfo();}).catch(function(){});
+    api("commenters/all?limit=1&offset=0").then(function(d){cmtState.totalUsr=d.total;updTabInfo();}).catch(function(){});
+  }
+
+  function updTabInfo(){
+    var el=$("cmt-tab-info");
+    if(el){
+      var parts=[];
+      if(cmtState.totalCmt!==undefined)parts.push("all "+cmtState.totalCmt);
+      if(cmtState.pending>0)parts.push(cmtState.pending+" pending");
+      if(cmtState.totalUsr!==undefined)parts.push(cmtState.totalUsr+" users");
+      el.textContent=parts.length?"("+parts.join(" | ")+")":"";
+    }
+  }
+
+  function updPendingBadge(){
+    var el=$("cmt-pending-n");if(el)el.textContent=cmtState.pending>0?" ("+cmtState.pending+")":"";
+  }
+
+  function cmtPageUrl(c){
+    var origin=window.location.origin;
+    return origin+h(c.page_slug)+"#comment-"+c.id;
+  }
+
+  function renderCmtTable(comments,isPending){
+    var hasUA=comments.some(function(c){return c.user_agent;});
+    var out='<div class="tbl-w"><table class="tbl"><tr><th>Author</th><th style="width:320px">Content</th><th style="max-width:120px">Page</th><th>IP</th><th>FP</th>'+(hasUA?'<th>UA</th>':'')+'<th>Status</th><th>Time</th><th>Actions</th></tr>';
+    for(var i=0;i<comments.length;i++){var c=comments[i];
+      var author=c.author?h(c.author.nickname):"Unknown";
+      if(c.author&&c.author.id===0)author='<span style="color:var(--accent);font-weight:600">'+h(c.author.nickname)+'</span>';
+      var status=c.status||"approved";
+      var stClass=status==="approved"?"color:var(--accent2)":status==="pending"?"color:orange":"color:var(--error)";
+      var pageLabel=c.page_title?h(cut(c.page_title,20)):h(cut(c.page_slug,20));
+      var pageFilter='<a href="#" onclick="elSlug.value=\''+h(c.page_slug).replace(/'/g,"\\'")+'\';loadAll();return false" title="'+h(c.page_slug)+'">'+pageLabel+'</a>';
+      var contentLink='<a href="'+cmtPageUrl(c)+'" target="_blank" rel="noopener" title="'+h(c.content)+'">'+h(cut(c.content,80))+'</a>';
+      var ip=c.ip||"";var ipClean=ip.replace(/:\d+$/,"");
+      var fp=c.fingerprint||"";
+      var ua=c.user_agent||"";
+      var acts='<button class="btn btn-s btn-g" onclick="cmtReplyOpen('+c.id+',\''+h(c.page_slug).replace(/'/g,"\\'")+'\')">Reply</button> ';
+      if(isPending||status==="pending") acts+='<button class="btn btn-s" style="background:var(--accent2)" onclick="cmtApprove('+c.id+')">Approve</button> <button class="btn btn-s btn-g" onclick="cmtReject('+c.id+')">Reject</button> ';
+      acts+='<button class="btn btn-s" style="background:var(--error)" onclick="cmtDel('+c.id+')">Delete</button>';
+      out+='<tr><td>'+author+'</td><td>'+contentLink+'</td>'+
+        '<td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+pageFilter+'</td>'+
+        '<td class="td-ip">'+(ipClean?'<a href="#" onclick="viewFp(\''+h(ipClean)+'\');return false">'+h(ipClean)+'</a>':'-')+'</td>'+
+        '<td class="td-fp" title="'+h(fp)+'">'+(fp?'<a href="#" onclick="viewFp(\''+h(fp)+'\');return false">'+h(fp.slice(0,8))+'</a>':'-')+'</td>'+
+        (hasUA?'<td class="td-ua" title="'+h(ua)+'">'+parseUA(ua)+'</td>':'')+
+        '<td style="'+stClass+'">'+h(status)+'</td><td class="td-time">'+h(toLocal(c.created_at))+'</td><td style="white-space:nowrap">'+acts+'</td></tr>';
+    }
+    out+='</table></div>';return out;
+  }
+
+  window.cmtTab=function(t){cmtState.tab=t;cmtState.off=0;cmtState.usrOff=0;renderCmtPanel();loadCmtData();};
+  window.cmtPg=function(o){cmtState.off=o;loadCmtData();};
+  window.usrPg=function(o){cmtState.usrOff=o;loadCmtData();};
+
+  window.setCmtMode=function(m){
+    fetch("/api/v1/comments/mode",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:m})})
+      .then(function(r){return r.json();}).then(function(j){if(j.ok){cmtState.mode=m;renderCmtPanel();loadCmtData();}else{alert(j.error?j.error.message:"Error");}});
+  };
+
+  window.cmtApprove=function(id){
+    fetch("/api/v1/comments/approve?id="+id,{method:"POST"}).then(function(r){return r.json();}).then(function(j){if(j.ok)loadCmtData();else alert(j.error?j.error.message:"Error");});
+  };
+  window.cmtReject=function(id){
+    fetch("/api/v1/comments/reject?id="+id,{method:"POST"}).then(function(r){return r.json();}).then(function(j){if(j.ok)loadCmtData();else alert(j.error?j.error.message:"Error");});
+  };
+  window.cmtDel=function(id){
+    if(!confirm("Delete this comment permanently?"))return;
+    fetch("/api/v1/comments/delete?id="+id,{method:"POST"}).then(function(r){return r.json();}).then(function(j){if(j.ok)loadCmtData();else alert(j.error?j.error.message:"Error");});
+  };
+
+  var _replyCtx={id:0,slug:""};
+  window.cmtReplyOpen=function(id,slug){
+    _replyCtx={id:id,slug:slug};
+    var box=$("cmt-reply-box"); if(box){box.style.display="";$("cmt-reply-ta").value="";$("cmt-reply-ta").focus();}
+  };
+  window.cmtReplyCancel=function(){
+    var box=$("cmt-reply-box"); if(box)box.style.display="none";
+  };
+  window.cmtReplySend=function(){
+    var ta=$("cmt-reply-ta"); var content=ta?ta.value.trim():"";
+    if(!content)return;
+    fetch("/api/v1/comments/admin-reply",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({site_id:S.site,page_slug:_replyCtx.slug,content:content,parent_id:_replyCtx.id})
+    }).then(function(r){return r.json();}).then(function(j){
+      if(j.ok){cmtReplyCancel();loadCmtData();}else{alert(j.error?j.error.message:"Error");}
+    });
+  };
+
   function refresh(){
     syncTag(); S.vOff=0;
     loadTrend(); loadRef(); loadViews();
@@ -565,6 +752,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
     S.slug=elSlug.value.trim(); S.fp=""; S.vOff=0; S.rOff=0;
     syncURL(); syncTag();
     loadStats(); loadSummary(); loadTrend(); loadRef(); loadPlat(); loadPop(); loadVis(); loadViews();
+    loadCmtCounts();
+    if(S.tab==="cmt")loadCmt();
     var _now=new Date(); var _tz=_now.toLocaleTimeString("en",{timeZoneName:"short"}).split(" ").pop(); $("ts").textContent="| "+_now.getFullYear()+"-"+pad2(_now.getMonth()+1)+"-"+pad2(_now.getDate())+" "+pad2(_now.getHours())+":"+pad2(_now.getMinutes())+":"+pad2(_now.getSeconds())+" "+_tz;
     _loaded=true;
   };

@@ -98,6 +98,16 @@ func main() {
 	mux.Handle("/api/v1/comments/approve", dashAuth(http.HandlerFunc(commentHandler.HandleApproveComment)))
 	mux.Handle("/api/v1/comments/reject", dashAuth(http.HandlerFunc(commentHandler.HandleRejectComment)))
 	mux.Handle("/api/v1/comments/delete", dashAuth(http.HandlerFunc(commentHandler.HandleDeleteComment)))
+	mux.Handle("/api/v1/comments/all", dashAuth(http.HandlerFunc(commentHandler.HandleAllComments)))
+	mux.Handle("/api/v1/comments/admin-reply", dashAuth(http.HandlerFunc(commentHandler.HandleAdminReply)))
+	mux.Handle("/api/v1/commenters/all", dashAuth(http.HandlerFunc(commentHandler.HandleAllCommenters)))
+	mux.Handle("/api/v1/comments/mode", dashAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			commentHandler.HandleSetCommentMode(w, r)
+		} else {
+			commentHandler.HandleGetCommentMode(w, r)
+		}
+	})))
 
 	// Apply middleware chain (outermost first)
 	var h http.Handler = mux

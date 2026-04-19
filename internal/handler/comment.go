@@ -432,10 +432,10 @@ func (h *CommentHandler) HandlePendingComments(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: comments})
 }
 
-// HandleApproveComment handles PUT /api/v1/comments/approve?id=
+// HandleApproveComment handles POST /api/v1/comments/approve?id=
 func (h *CommentHandler) HandleApproveComment(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPut {
-		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only PUT is allowed")
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only POST is allowed")
 		return
 	}
 
@@ -453,10 +453,10 @@ func (h *CommentHandler) HandleApproveComment(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: "approved"})
 }
 
-// HandleRejectComment handles PUT /api/v1/comments/reject?id=
+// HandleRejectComment handles POST /api/v1/comments/reject?id=
 func (h *CommentHandler) HandleRejectComment(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPut {
-		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only PUT is allowed")
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only POST is allowed")
 		return
 	}
 
@@ -474,10 +474,10 @@ func (h *CommentHandler) HandleRejectComment(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: "rejected"})
 }
 
-// HandleDeleteComment handles DELETE /api/v1/comments/delete?id=
+// HandleDeleteComment handles POST /api/v1/comments/delete?id=
 func (h *CommentHandler) HandleDeleteComment(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete {
-		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only DELETE is allowed")
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only POST is allowed")
 		return
 	}
 
@@ -493,6 +493,149 @@ func (h *CommentHandler) HandleDeleteComment(w http.ResponseWriter, r *http.Requ
 	}
 
 	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: "deleted"})
+}
+
+// HandleAllComments handles GET /api/v1/comments/all?site_id=&limit=&offset=
+func (h *CommentHandler) HandleAllComments(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only GET is allowed")
+		return
+	}
+
+	siteID := r.URL.Query().Get("site_id")
+	if siteID == "" {
+		siteID = extractSiteID(r)
+	}
+	limit := 20
+	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 && l <= 100 {
+		limit = l
+	}
+	offset := 0
+	if o, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil && o >= 0 {
+		offset = o
+	}
+
+	comments, total, err := h.svc.GetAllComments(r.Context(), siteID, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: map[string]interface{}{
+		"comments": comments,
+		"total":    total,
+		"limit":    limit,
+		"offset":   offset,
+	}})
+}
+
+// adminReplyRequest is the JSON body for POST /api/v1/comments/admin-reply.
+type adminReplyRequest struct {
+	SiteID   string `json:"site_id"`
+	PageSlug string `json:"page_slug"`
+	Content  string `json:"content"`
+	ParentID *int64 `json:"parent_id"`
+}
+
+// HandleAdminReply handles POST /api/v1/comments/admin-reply
+func (h *CommentHandler) HandleAdminReply(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only POST is allowed")
+		return
+	}
+
+	var req adminReplyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid request body")
+		return
+	}
+
+	if strings.TrimSpace(req.Content) == "" {
+		writeError(w, http.StatusBadRequest, "MISSING_FIELD", "content is required")
+		return
+	}
+	if req.PageSlug == "" {
+		writeError(w, http.StatusBadRequest, "MISSING_FIELD", "page_slug is required")
+		return
+	}
+
+	siteID := req.SiteID
+	if siteID == "" {
+		siteID = extractSiteID(r)
+	}
+
+	comment, err := h.svc.AdminReply(r.Context(), siteID, req.PageSlug, req.Content, req.ParentID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: comment})
+}
+
+// HandleAllCommenters handles GET /api/v1/commenters/all?limit=&offset=
+func (h *CommentHandler) HandleAllCommenters(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only GET is allowed")
+		return
+	}
+
+	limit := 20
+	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 && l <= 100 {
+		limit = l
+	}
+	offset := 0
+	if o, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil && o >= 0 {
+		offset = o
+	}
+
+	commenters, total, err := h.svc.GetAllCommenters(r.Context(), limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: map[string]interface{}{
+		"commenters": commenters,
+		"total":      total,
+		"limit":      limit,
+		"offset":     offset,
+	}})
+}
+
+// HandleGetCommentMode handles GET /api/v1/comments/mode
+func (h *CommentHandler) HandleGetCommentMode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only GET is allowed")
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: map[string]string{"mode": h.svc.CommentMode()}})
+}
+
+// setCommentModeRequest is the JSON body for POST /api/v1/comments/mode.
+type setCommentModeRequest struct {
+	Mode string `json:"mode"`
+}
+
+// HandleSetCommentMode handles POST /api/v1/comments/mode
+func (h *CommentHandler) HandleSetCommentMode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only POST is allowed")
+		return
+	}
+
+	var req setCommentModeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid request body")
+		return
+	}
+
+	if err := h.svc.SetCommentMode(req.Mode); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_MODE", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: map[string]string{"mode": req.Mode}})
 }
 
 // HandleCommentConfig handles GET /api/v1/comments/config

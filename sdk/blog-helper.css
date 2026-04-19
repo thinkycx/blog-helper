@@ -44,6 +44,7 @@
 .bh-comment-author { font-weight: 600; font-size: 14px; color: #555; text-decoration: none; cursor: default; }
 a.bh-comment-author { cursor: pointer; }
 a.bh-comment-author:hover { color: #333; }
+.bh-admin-badge { display: inline-block; font-size: 11px; font-weight: 500; color: #fff; background: #0071e3; padding: 1px 6px; border-radius: 3px; margin-left: 6px; vertical-align: middle; line-height: 1.4; }
 .bh-author-tooltip { position: absolute; left: 0; top: 100%; margin-top: 6px; background: #fff; border: 1px solid #e8e8e8; border-radius: 6px; padding: 8px 12px; min-width: 180px; box-shadow: 0 3px 10px rgba(0,0,0,0.1); z-index: 10; opacity: 0; visibility: hidden; transform: translateY(-3px); transition: opacity 0.15s, visibility 0.15s, transform 0.15s; transition-delay: 0s; pointer-events: none; }
 .bh-comment-author-wrap:hover .bh-author-tooltip, .bh-user-badge:hover .bh-author-tooltip { opacity: 1; visibility: visible; transform: translateY(0); transition-delay: 0.3s; }
 .bh-author-tooltip-name { font-size: 13px; color: #333; font-weight: 500; white-space: nowrap; }
@@ -125,6 +126,8 @@ a.bh-comment-author:hover { color: #333; }
 .bh-form-msg.bh-success { color: #333; }
 .bh-form-msg.bh-error { color: #c00; }
 .bh-no-comments { text-align: center; color: #999; padding: 24px 0; font-size: 14px; }
+.bh-pending-notice { text-align: center; color: #e67e22; background: #fef9e7; border: 1px solid #f9e79f; border-radius: 6px; padding: 10px 16px; font-size: 13px; margin-bottom: 12px; animation: bh-fade-in 0.3s; }
+@keyframes bh-fade-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
 
 /* Markdown content (rendered by marked.js) */
 .bh-comment-content pre,

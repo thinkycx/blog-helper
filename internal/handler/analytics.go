@@ -400,7 +400,11 @@ func (h *AnalyticsHandler) HandleSummary(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: pvuvData{PV: pv, UV: uv}})
+	likes, commenters, _ := h.svc.GetEngagementStats(r.Context(), siteID, days)
+
+	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: map[string]int64{
+		"pv": pv, "uv": uv, "likes": likes, "commenters": commenters,
+	}})
 }
 
 // HandleViews handles GET /api/v1/analytics/views?site_id=...&slug=...&limit=50&offset=0

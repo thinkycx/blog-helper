@@ -58,6 +58,7 @@ type CommentWithAuthor struct {
 	ID          int64            `json:"id"`
 	SiteID      string           `json:"site_id,omitempty"`
 	PageSlug    string           `json:"page_slug"`
+	PageTitle   string           `json:"page_title,omitempty"`
 	ParentID    *int64           `json:"parent_id,omitempty"`
 	Content     string           `json:"content"`
 	Status      string           `json:"status,omitempty"`
@@ -67,6 +68,7 @@ type CommentWithAuthor struct {
 	MyReactions []string         `json:"my_reactions,omitempty"`
 	IP          string           `json:"ip,omitempty"`
 	UserAgent   string           `json:"user_agent,omitempty"`
+	Fingerprint string           `json:"fingerprint,omitempty"`
 }
 
 // ReactionCount is an emoji with its count.

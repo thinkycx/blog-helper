@@ -89,6 +89,12 @@ type Store interface {
 	// GetCommentsBySlug returns approved comments for a page, joined with author info.
 	GetCommentsBySlug(ctx context.Context, siteID, slug string) ([]*model.CommentWithAuthor, error)
 
+	// GetAllComments returns all comments (any status) with pagination, joined with author info and page title.
+	GetAllComments(ctx context.Context, siteID string, limit, offset int) ([]*model.CommentWithAuthor, int, error)
+
+	// GetAllCommenters returns all commenters with pagination.
+	GetAllCommenters(ctx context.Context, limit, offset int) ([]*model.Commenter, int, error)
+
 	// GetPendingComments returns comments awaiting moderation.
 	GetPendingComments(ctx context.Context, siteID string) ([]*model.CommentWithAuthor, error)
 
@@ -132,6 +138,10 @@ type Store interface {
 
 	// GetUserPageReactions returns which emojis the given fingerprint has reacted with on a page.
 	GetUserPageReactions(ctx context.Context, siteID, pageSlug, fingerprint string) ([]string, error)
+
+	// GetEngagementStats returns total page reactions and commenter count.
+	// days=0 means all time.
+	GetEngagementStats(ctx context.Context, siteID string, days int) (likes int64, commenters int64, err error)
 
 	// Close closes the underlying database connection.
 	Close() error

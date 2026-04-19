@@ -1028,9 +1028,11 @@
       (a.bio ? '<div class="bh-author-tooltip-bio">' + escapeHtml(a.bio) + '</div>' : '') +
     '</div>';
 
+    var isAdmin = a.id === 0;
+    var adminBadge = isAdmin ? '<span class="bh-admin-badge">Author</span>' : '';
     var authorName = blogUrl ?
-      '<a class="bh-comment-author" href="' + escapeHtml(blogUrl) + '" target="_blank" rel="noopener">' + escapeHtml(a.nickname || "匿名") + '</a>' :
-      '<span class="bh-comment-author">' + escapeHtml(a.nickname || "匿名") + '</span>';
+      '<a class="bh-comment-author" href="' + escapeHtml(blogUrl) + '" target="_blank" rel="noopener">' + escapeHtml(a.nickname || "匿名") + '</a>' + adminBadge :
+      '<span class="bh-comment-author">' + escapeHtml(a.nickname || "匿名") + '</span>' + adminBadge;
 
     var replyRef = "";
     if (isReply && c.parent_id) {
@@ -1503,13 +1505,23 @@
           if (resp.data.me) {
             state.me = resp.data.me;
           }
-          // Add to list
-          if (resp.data.comment) {
-            state.comments.push(resp.data.comment);
+          // Add to list (only if approved)
+          var newComment = resp.data.comment;
+          if (newComment && newComment.status === "approved") {
+            state.comments.push(newComment);
           }
           state.replyTo = null;
           renderCommentList(section, state, config);
           hideCommentForm(section);
+          // Show pending notice
+          if (newComment && newComment.status === "pending") {
+            var notice = document.createElement("div");
+            notice.className = "bh-pending-notice";
+            notice.textContent = "评论已提交，等待审核后展示";
+            var list = section.querySelector(".bh-comment-list");
+            if (list) list.insertBefore(notice, list.firstChild);
+            setTimeout(function() { if (notice.parentNode) notice.parentNode.removeChild(notice); }, 5000);
+          }
         } else {
           msgEl.className = "bh-form-msg bh-error";
           msgEl.textContent = resp.error ? resp.error.message : "提交失败";

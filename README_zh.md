@@ -13,7 +13,9 @@
 - **热门文章** — 按 PV 排行，支持 7d / 30d / 全部
 - **分析面板** — 密码保护的 Dashboard，含趋势图、来源、访客、原始访问记录
 - **多站点** — 一个实例，N 个站点，`site_id` 自动从域名提取，数据完全隔离
-- **零依赖 SDK** — 单个 JS 文件（~8KB），自动识别页面类型，渲染统计数据
+- **评论系统** — 邮箱身份认证，Markdown 支持，Emoji 表情回应，Cookie Token 持久化
+- **文章表态** — 每篇文章独立的爱心按钮，不依赖评论模式
+- **零依赖 SDK** — JS + CSS + Markdown 库，自动识别页面类型，渲染统计数据
 - **优雅降级** — 后端宕机时博客正常工作，无 JS 报错
 
 ## 快速开始
@@ -31,6 +33,7 @@ go run ./cmd/server/ -addr 127.0.0.1:9001 -db ./data/blog-helper.db \
 ### 2. 博客引入 SDK
 
 ```html
+<link rel="stylesheet" href="asset/js/blog-helper.css">
 <script src="asset/js/blog-helper.js" defer></script>
 ```
 
@@ -61,6 +64,23 @@ SITE_DIR=/path/to/your-blog make dev
 | `POST` | `/analytics/stats/batch` | 批量查询（`{"site_id":"...","slugs":[...]}`) |
 | `GET` | `/analytics/popular?limit=10&period=30d&site_id=...` | 热门文章排行 |
 
+### 评论 & 表态（公开）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/comments/config?site_id=...` | 查询站点评论模式 |
+| `GET` | `/comments?slug=...&site_id=...` | 获取页面评论 |
+| `POST` | `/comments/post` | 发表评论（需 PoW） |
+| `POST` | `/comments/count` | 批量评论数 |
+| `GET` | `/comments/challenge?site_id=...` | 获取 PoW 挑战 |
+| `POST` | `/comments/react` | 评论 Emoji 回应 |
+| `GET` | `/comments/recent?site_id=...&limit=5` | 最近评论（侧边栏） |
+| `GET` | `/comments/hot?site_id=...&limit=5` | 热门评论（按回应数） |
+| `GET` | `/commenter/lookup?token=...` | 按 Token 查询评论者 |
+| `POST` | `/commenter/profile` | 更新评论者资料 |
+| `POST` | `/page/react` | 文章爱心表态 |
+| `GET` | `/page/reactions?slug=...&site_id=...` | 获取文章表态数 |
+
 ### Dashboard 接口（需认证）
 
 | 方法 | 路径 | 说明 |
@@ -70,7 +90,16 @@ SITE_DIR=/path/to/your-blog make dev
 | `GET` | `/analytics/visitors?site_id=...` | 最近独立访客 |
 | `GET` | `/analytics/views?site_id=...&limit=50` | 原始访问记录 |
 | `GET` | `/analytics/summary?period=30d&site_id=...` | 时间段 PV/UV 汇总 |
-| `GET` | `/dashboard` | 分析面板 |
+| `GET` | `/comments/pending?site_id=...` | 待审评论（审核模式） |
+| `POST` | `/comments/approve?id=...` | 通过评论 |
+| `POST` | `/comments/reject?id=...` | 驳回评论 |
+| `POST` | `/comments/delete?id=...` | 删除评论 |
+| `GET` | `/comments/all?site_id=&limit=&offset=` | 全部评论（分页） |
+| `POST` | `/comments/admin-reply` | 管理员以"作者"身份回复 |
+| `GET` | `/comments/mode` | 获取当前评论模式 |
+| `POST` | `/comments/mode` | 运行时切换评论模式 |
+| `GET` | `/commenters/all?limit=&offset=` | 评论用户列表（分页） |
+| `GET` | `/dashboard` | 分析 + 评论管理面板 |
 | `GET` | `/health` | 健康检查 |
 
 ### 示例
@@ -96,6 +125,7 @@ curl -X POST http://localhost:9001/api/v1/analytics/stats/batch \
 零配置即可工作，需要时可覆盖：
 
 ```html
+<link rel="stylesheet" href="asset/js/blog-helper.css">
 <script>
 window.BlogHelperConfig = {
   apiBase: "https://your-domain.com/api/v1/analytics",
@@ -111,6 +141,7 @@ window.BlogHelperConfig = {
     showListPV: true,
     showPostStats: true,
     showPopular: true,
+    showComments: "auto",   // true | "auto" | false
     popularLimit: 8,
     popularPeriod: "30d"    // "7d", "30d", "all"
   },
@@ -130,11 +161,13 @@ window.BlogHelperConfig = {
 
 密码保护，访问 `/api/v1/dashboard`。通过 `-dashboard-pass` 参数或 `BH_DASHBOARD_PASS` 环境变量配置（默认 `helper`）。
 
-**面板**：在线访客、PV/UV 趋势图、热门文章、来源域名、访客列表、原始访问记录。
+**面板**：在线访客、PV/UV 汇总、文章点赞数、评论用户数、趋势图、热门文章、来源域名、平台分布、访客列表、原始访问记录、评论管理。
 
-**时间范围**：趋势图支持 1h、6h、1d、7d、30d、90d、180d、365d。访客 / 原始记录面板使用天级粒度（子日级别回退为 1 天）。
+**时间范围**：趋势图支持 1h、6h、1d、7d、30d、90d、180d、365d。所有统计卡片（PV/UV/Likes/Commenters）跟随时间范围筛选。
 
 **文章钻取**：点击热门文章中的任意文章，趋势图和来源自动筛选到该页面。
+
+**评论管理**：All / Pending / Commenters 子面板，管理员回复（Markdown），运行时模式切换，UA 解析为 `OS · Browser` 格式。
 
 ## 配置
 
@@ -144,14 +177,28 @@ window.BlogHelperConfig = {
 | `-db` | `BH_DB` | `./data/blog-helper.db` | SQLite 数据库路径 |
 | `-allowed-origins` | `BH_ALLOWED_ORIGINS` | `https://your-site.com` | CORS 允许的源（逗号分隔） |
 | `-dashboard-pass` | `BH_DASHBOARD_PASS` | `helper` | Dashboard 登录密码 |
+| `-comment-mode` | `BH_COMMENT_MODE` | `off` | 评论模式：`off`、`auto-approve`、`moderation` |
 | `-debug` | — | `false` | Debug 模式（health 暴露 version） |
+
+## 评论系统
+
+通过 `-comment-mode auto-approve` 启用（或 `moderation` 需人工审核）。
+
+**功能**：邮箱身份 + Cookie Token 持久化，嵌套回复，Markdown（写作/预览切换），Emoji 表情回应，个人资料编辑（博客地址、个性签名）。
+
+**站点级控制**：SDK `showComments` 选项 — `true`（始终开启）、`"auto"`（从后端检测，默认）、`false`（禁用）。文章爱心表态独立于评论模式，始终可用。
+
+**防机器人**：Proof-of-Work（SHA-256 前缀挑战）、频率限制（5 条/IP/分钟）、蜜罐字段。
 
 ## 防刷
 
 | 层级 | 机制 | 说明 |
 |------|------|------|
-| 后端 | 滑动窗口去重 | 同一 fingerprint + slug 30 秒内去重 |
-| 后端 | Bot UA 过滤 | Googlebot 等爬虫不计入 |
+| 统计 | 滑动窗口去重 | 同一 fingerprint + slug 30 秒内去重 |
+| 统计 | Bot UA 过滤 | Googlebot 等爬虫不计入 |
+| 评论 | Proof-of-Work | 每次发评论前需解 SHA-256 挑战 |
+| 评论 | 频率限制 | 每 IP 每分钟最多 5 条 |
+| 评论 | 蜜罐字段 | 隐藏字段捕获机器人 |
 | Nginx（可选） | `limit_req` per IP | 建议 10 req/s，burst 20 |
 
 ## 部署
@@ -221,6 +268,11 @@ SQLite，DDL 内嵌为 Go const，首次启动自动建表。
 | `page_stats` | 聚合缓存（PV/UV），主键 `(site_id, page_slug)` |
 | `daily_stats` | 每日每页聚合 |
 | `site_daily_stats` | 站点级每日汇总 |
+| `commenters` | 评论者信息（邮箱、昵称、头像、签名） |
+| `commenter_tokens` | 评论者登录 Token |
+| `comments` | 评论内容（支持嵌套回复） |
+| `comment_reactions` | 评论 Emoji 回应 |
+| `page_reactions` | 文章爱心表态 |
 
 写入流程（单事务）：`page_views` → `page_stats` → `daily_stats` → `site_daily_stats` → 返回计数。
 
@@ -232,16 +284,24 @@ blog-helper/
 ├── internal/
 │   ├── config/config.go            # 参数 + 环境变量
 │   ├── handler/
-│   │   ├── analytics.go            # API handlers
+│   │   ├── analytics.go            # 统计 API handlers
+│   │   ├── comment.go              # 评论 API handlers
 │   │   ├── dashboard.go            # Dashboard UI（单页）
 │   │   ├── health.go               # 健康检查
 │   │   └── middleware.go           # CORS、日志、Recovery、认证
-│   ├── model/analytics.go          # 领域模型
+│   ├── model/
+│   │   ├── analytics.go            # 统计领域模型
+│   │   └── comment.go             # 评论领域模型
 │   ├── store/
 │   │   ├── store.go                # 存储接口
 │   │   └── sqlite.go              # SQLite 实现
-│   └── service/analytics.go        # 去重、Bot 过滤、限流
-├── sdk/blog-helper.js              # 前端 SDK（~8KB）
+│   └── service/
+│       ├── analytics.go            # 去重、Bot 过滤、限流
+│       └── comment.go             # 评论业务逻辑
+├── sdk/
+│   ├── blog-helper.js              # 前端 SDK
+│   ├── blog-helper.css             # SDK 样式
+│   └── lib/marked.min.js           # Markdown 解析库（本地）
 ├── scripts/dev-server.py           # 开发服务器（静态 + 代理）
 └── Makefile
 ```
@@ -263,7 +323,8 @@ blog-helper/
 - [x] Bot 过滤 + 限流
 - [x] 访问趋势图
 - [x] 全站 Dashboard
-- [ ] 评论系统
+- [x] 评论系统
+- [x] 文章表态（爱心）
 - [ ] SDK 压缩版
 - [ ] 单元测试
 

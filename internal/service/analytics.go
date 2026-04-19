@@ -199,6 +199,13 @@ func (s *AnalyticsService) GetPeriodSummary(ctx context.Context, siteID, slug st
 	return s.store.GetPeriodSummary(ctx, normalizeSiteID(siteID), normalizedSlug, days)
 }
 
+func (s *AnalyticsService) GetEngagementStats(ctx context.Context, siteID string, days int) (int64, int64, error) {
+	if days < 0 {
+		days = 0
+	}
+	return s.store.GetEngagementStats(ctx, normalizeSiteID(siteID), days)
+}
+
 // GetTopReferrers returns the top N referrer domains within the last N days.
 func (s *AnalyticsService) GetTopReferrers(ctx context.Context, siteID string, days int, limit int) ([]*model.ReferrerStat, error) {
 	if days <= 0 || days > 365 {

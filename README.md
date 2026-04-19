@@ -33,6 +33,7 @@ go run ./cmd/server/ -addr 127.0.0.1:9001 -db ./data/blog-helper.db \
 ### 2. Add SDK to your blog
 
 ```html
+<link rel="stylesheet" href="asset/js/blog-helper.css">
 <script src="asset/js/blog-helper.js" defer></script>
 ```
 
@@ -63,6 +64,23 @@ Base path: `/api/v1`
 | `POST` | `/analytics/stats/batch` | Batch stats (`{"site_id":"...","slugs":[...]}`) |
 | `GET` | `/analytics/popular?limit=10&period=30d&site_id=...` | Popular articles ranking |
 
+### Comments & Reactions (public)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/comments/config?site_id=...` | Comment mode for the site |
+| `GET` | `/comments?slug=...&site_id=...` | Get comments for a page |
+| `POST` | `/comments/post` | Post a comment (PoW required) |
+| `POST` | `/comments/count` | Batch comment counts |
+| `GET` | `/comments/challenge?site_id=...` | Get PoW challenge |
+| `POST` | `/comments/react` | React (emoji) to a comment |
+| `GET` | `/comments/recent?site_id=...&limit=5` | Recent comments (sidebar) |
+| `GET` | `/comments/hot?site_id=...&limit=5` | Hot comments by reaction count |
+| `GET` | `/commenter/lookup?token=...` | Look up commenter by token |
+| `POST` | `/commenter/profile` | Update commenter profile |
+| `POST` | `/page/react` | React (heart) to a page |
+| `GET` | `/page/reactions?slug=...&site_id=...` | Get page reaction counts |
+
 ### Dashboard (auth required)
 
 | Method | Endpoint | Description |
@@ -72,7 +90,16 @@ Base path: `/api/v1`
 | `GET` | `/analytics/visitors?site_id=...` | Recent unique visitors |
 | `GET` | `/analytics/views?site_id=...&limit=50` | Raw page view records |
 | `GET` | `/analytics/summary?period=30d&site_id=...` | PV/UV summary for a period |
-| `GET` | `/dashboard` | Analytics dashboard UI |
+| `GET` | `/comments/pending?site_id=...` | Pending comments (moderation) |
+| `POST` | `/comments/approve?id=...` | Approve a comment |
+| `POST` | `/comments/reject?id=...` | Reject a comment |
+| `POST` | `/comments/delete?id=...` | Delete a comment |
+| `GET` | `/comments/all?site_id=&limit=&offset=` | All comments (paginated) |
+| `POST` | `/comments/admin-reply` | Admin reply as "Author" |
+| `GET` | `/comments/mode` | Get current comment mode |
+| `POST` | `/comments/mode` | Switch comment mode at runtime |
+| `GET` | `/commenters/all?limit=&offset=` | All commenters (paginated) |
+| `GET` | `/dashboard` | Analytics + comment management UI |
 | `GET` | `/health` | Health check |
 
 ### Examples
@@ -98,6 +125,7 @@ Error format: `{"ok":false,"error":{"code":"RATE_LIMITED","message":"Too many re
 Zero config by default. Override when needed:
 
 ```html
+<link rel="stylesheet" href="asset/js/blog-helper.css">
 <script>
 window.BlogHelperConfig = {
   apiBase: "https://your-domain.com/api/v1/analytics",
@@ -113,6 +141,7 @@ window.BlogHelperConfig = {
     showListPV: true,
     showPostStats: true,
     showPopular: true,
+    showComments: "auto",   // true | "auto" | false
     popularLimit: 8,
     popularPeriod: "30d"    // "7d", "30d", "all"
   },
@@ -132,11 +161,13 @@ window.BlogHelperConfig = {
 
 Password-protected at `/api/v1/dashboard`. Set via `-dashboard-pass` flag or `BH_DASHBOARD_PASS` env var (default: `helper`).
 
-**Panels**: Active visitors, PV/UV trend chart, popular articles, referrer domains, visitor list, raw access logs.
+**Panels**: Active visitors, PV/UV summary, article likes, commenters, trend chart, popular articles, referrer domains, platforms, visitor list, raw access logs, comment management.
 
-**Time ranges**: Trend chart supports 1h, 6h, 1d, 7d, 30d, 90d, 180d, 365d. Visitor/Raw Views panels use day-level granularity (sub-daily periods fall back to 1 day).
+**Time ranges**: Trend chart supports 1h, 6h, 1d, 7d, 30d, 90d, 180d, 365d. All stat cards (PV/UV/Likes/Commenters) respect the selected period.
 
 **Article drill-down**: Click any article in Popular to filter trend and referrers to that page.
+
+**Comment management**: All/Pending/Commenters sub-tabs, admin reply (Markdown), runtime mode switch, UA parsed as `OS · Browser`.
 
 ## Configuration
 

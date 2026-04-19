@@ -153,6 +153,10 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
 
+	// Ensure admin commenter placeholder (id=0) exists for admin replies.
+	db.ExecContext(context.Background(),
+		`INSERT OR IGNORE INTO commenters (id, email, nickname, avatar_seed) VALUES (0, 'admin@system', '作者', 'admin')`)
+
 	// Attempt v1→v2 migration: add site_id columns to existing tables.
 	// These will fail silently if the column already exists (fresh install) or succeed on upgrade.
 	migrateV1ToV2(db)
@@ -918,6 +922,40 @@ func (s *SQLiteStore) GetPeriodSummary(ctx context.Context, siteID, slug string,
 	return pv, uv, nil
 }
 
+func (s *SQLiteStore) GetEngagementStats(ctx context.Context, siteID string, days int) (int64, int64, error) {
+	// Total page reactions (likes)
+	likeWhere := "site_id = ?"
+	likeArgs := []interface{}{siteID}
+	if days > 0 {
+		likeWhere += " AND created_at >= datetime('now', ?)"
+		likeArgs = append(likeArgs, fmt.Sprintf("-%d days", days))
+	}
+	var likes int64
+	err := s.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM page_reactions WHERE "+likeWhere, likeArgs...,
+	).Scan(&likes)
+	if err != nil {
+		return 0, 0, fmt.Errorf("get engagement likes: %w", err)
+	}
+
+	// Distinct commenters (exclude admin id=0)
+	cmtWhere := "c.site_id = ? AND c.commenter_id > 0"
+	cmtArgs := []interface{}{siteID}
+	if days > 0 {
+		cmtWhere += " AND c.created_at >= datetime('now', ?)"
+		cmtArgs = append(cmtArgs, fmt.Sprintf("-%d days", days))
+	}
+	var commenters int64
+	err = s.db.QueryRowContext(ctx,
+		"SELECT COUNT(DISTINCT c.commenter_id) FROM comments c WHERE "+cmtWhere, cmtArgs...,
+	).Scan(&commenters)
+	if err != nil {
+		return 0, 0, fmt.Errorf("get engagement commenters: %w", err)
+	}
+
+	return likes, commenters, nil
+}
+
 func extractDomain(referrer string) string {
 	if referrer == "" {
 		return "direct"
@@ -1044,10 +1082,10 @@ func (s *SQLiteStore) CreateComment(ctx context.Context, c *model.Comment) (*mod
 
 func (s *SQLiteStore) GetCommentsBySlug(ctx context.Context, siteID, slug string) ([]*model.CommentWithAuthor, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT c.id, c.page_slug, c.parent_id, c.content, c.created_at,
+		SELECT c.id, c.page_slug, c.commenter_id, c.parent_id, c.content, c.created_at,
 		       u.id, u.nickname, u.avatar_seed, u.blog_url, u.bio
 		FROM comments c
-		JOIN commenters u ON u.id = c.commenter_id
+		LEFT JOIN commenters u ON u.id = c.commenter_id
 		WHERE c.site_id = ? AND c.page_slug = ? AND c.status = 'approved'
 		ORDER BY c.created_at ASC`, siteID, slug)
 	if err != nil {
@@ -1058,17 +1096,27 @@ func (s *SQLiteStore) GetCommentsBySlug(ctx context.Context, siteID, slug string
 	var result []*model.CommentWithAuthor
 	for rows.Next() {
 		var cwa model.CommentWithAuthor
-		var author model.CommenterPublic
+		var commenterID int64
 		var parentID sql.NullInt64
-		if err := rows.Scan(&cwa.ID, &cwa.PageSlug, &parentID, &cwa.Content, &cwa.CreatedAt,
-			&author.ID, &author.Nickname, &author.AvatarSeed, &author.BlogURL, &author.Bio); err != nil {
+		var authorID sql.NullInt64
+		var authorNickname, authorAvatar, authorBlog, authorBio sql.NullString
+		if err := rows.Scan(&cwa.ID, &cwa.PageSlug, &commenterID, &parentID, &cwa.Content, &cwa.CreatedAt,
+			&authorID, &authorNickname, &authorAvatar, &authorBlog, &authorBio); err != nil {
 			return nil, fmt.Errorf("scan comment: %w", err)
 		}
 		if parentID.Valid {
 			pid := parentID.Int64
 			cwa.ParentID = &pid
 		}
-		cwa.Author = &author
+		if authorID.Valid {
+			cwa.Author = &model.CommenterPublic{
+				ID: authorID.Int64, Nickname: authorNickname.String,
+				AvatarSeed: authorAvatar.String, BlogURL: authorBlog.String, Bio: authorBio.String,
+			}
+		} else {
+			// Admin comment (commenter_id=0)
+			cwa.Author = &model.CommenterPublic{ID: 0, Nickname: "作者", AvatarSeed: "admin"}
+		}
 		result = append(result, &cwa)
 	}
 	if result == nil {
@@ -1079,10 +1127,12 @@ func (s *SQLiteStore) GetCommentsBySlug(ctx context.Context, siteID, slug string
 
 func (s *SQLiteStore) GetPendingComments(ctx context.Context, siteID string) ([]*model.CommentWithAuthor, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT c.id, c.site_id, c.page_slug, c.parent_id, c.content, c.status, c.ip, c.user_agent, c.created_at,
-		       u.id, u.nickname, u.avatar_seed, u.blog_url, u.bio
+		SELECT c.id, c.site_id, c.page_slug, c.parent_id, c.content, c.status, c.ip, c.user_agent, c.fingerprint, c.created_at,
+		       u.id, u.nickname, u.avatar_seed, u.blog_url, u.bio,
+		       COALESCE(ps.page_title, '')
 		FROM comments c
-		JOIN commenters u ON u.id = c.commenter_id
+		LEFT JOIN commenters u ON u.id = c.commenter_id
+		LEFT JOIN page_stats ps ON ps.site_id = c.site_id AND ps.page_slug = c.page_slug
 		WHERE c.site_id = ? AND c.status = 'pending'
 		ORDER BY c.created_at DESC`, siteID)
 	if err != nil {
@@ -1093,24 +1143,118 @@ func (s *SQLiteStore) GetPendingComments(ctx context.Context, siteID string) ([]
 	var result []*model.CommentWithAuthor
 	for rows.Next() {
 		var cwa model.CommentWithAuthor
-		var author model.CommenterPublic
 		var parentID sql.NullInt64
+		var authorID sql.NullInt64
+		var authorNickname, authorAvatar, authorBlog, authorBio sql.NullString
 		if err := rows.Scan(&cwa.ID, &cwa.SiteID, &cwa.PageSlug, &parentID, &cwa.Content, &cwa.Status,
-			&cwa.IP, &cwa.UserAgent, &cwa.CreatedAt,
-			&author.ID, &author.Nickname, &author.AvatarSeed, &author.BlogURL, &author.Bio); err != nil {
+			&cwa.IP, &cwa.UserAgent, &cwa.Fingerprint, &cwa.CreatedAt,
+			&authorID, &authorNickname, &authorAvatar, &authorBlog, &authorBio,
+			&cwa.PageTitle); err != nil {
 			return nil, fmt.Errorf("scan pending comment: %w", err)
 		}
 		if parentID.Valid {
 			pid := parentID.Int64
 			cwa.ParentID = &pid
 		}
-		cwa.Author = &author
+		if authorID.Valid {
+			cwa.Author = &model.CommenterPublic{
+				ID: authorID.Int64, Nickname: authorNickname.String,
+				AvatarSeed: authorAvatar.String, BlogURL: authorBlog.String, Bio: authorBio.String,
+			}
+		} else {
+			cwa.Author = &model.CommenterPublic{ID: 0, Nickname: "作者", AvatarSeed: "admin"}
+		}
 		result = append(result, &cwa)
 	}
 	if result == nil {
 		result = []*model.CommentWithAuthor{}
 	}
 	return result, nil
+}
+
+func (s *SQLiteStore) GetAllComments(ctx context.Context, siteID string, limit, offset int) ([]*model.CommentWithAuthor, int, error) {
+	// Count total
+	var total int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM comments WHERE site_id = ?`, siteID).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("count all comments: %w", err)
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT c.id, c.site_id, c.page_slug, c.commenter_id, c.parent_id, c.content, c.status, c.ip, c.user_agent, c.fingerprint, c.created_at,
+		       u.id, u.nickname, u.avatar_seed, u.blog_url, u.bio,
+		       COALESCE(ps.page_title, '')
+		FROM comments c
+		LEFT JOIN commenters u ON u.id = c.commenter_id
+		LEFT JOIN page_stats ps ON ps.site_id = c.site_id AND ps.page_slug = c.page_slug
+		WHERE c.site_id = ?
+		ORDER BY c.created_at DESC
+		LIMIT ? OFFSET ?`, siteID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("get all comments: %w", err)
+	}
+	defer rows.Close()
+
+	var result []*model.CommentWithAuthor
+	for rows.Next() {
+		var cwa model.CommentWithAuthor
+		var commenterID int64
+		var parentID sql.NullInt64
+		var authorID sql.NullInt64
+		var authorNickname, authorAvatar, authorBlog, authorBio sql.NullString
+		if err := rows.Scan(&cwa.ID, &cwa.SiteID, &cwa.PageSlug, &commenterID, &parentID, &cwa.Content, &cwa.Status,
+			&cwa.IP, &cwa.UserAgent, &cwa.Fingerprint, &cwa.CreatedAt,
+			&authorID, &authorNickname, &authorAvatar, &authorBlog, &authorBio,
+			&cwa.PageTitle); err != nil {
+			return nil, 0, fmt.Errorf("scan comment: %w", err)
+		}
+		if parentID.Valid {
+			pid := parentID.Int64
+			cwa.ParentID = &pid
+		}
+		if authorID.Valid {
+			cwa.Author = &model.CommenterPublic{
+				ID: authorID.Int64, Nickname: authorNickname.String,
+				AvatarSeed: authorAvatar.String, BlogURL: authorBlog.String, Bio: authorBio.String,
+			}
+		}
+		result = append(result, &cwa)
+	}
+	if result == nil {
+		result = []*model.CommentWithAuthor{}
+	}
+	return result, total, nil
+}
+
+func (s *SQLiteStore) GetAllCommenters(ctx context.Context, limit, offset int) ([]*model.Commenter, int, error) {
+	var total int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM commenters WHERE id > 0`).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("count commenters: %w", err)
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, email, nickname, avatar_seed, blog_url, bio, reg_ip, reg_ua, reg_fp, created_at, updated_at, last_seen_at
+		FROM commenters WHERE id > 0
+		ORDER BY id DESC LIMIT ? OFFSET ?`, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("get all commenters: %w", err)
+	}
+	defer rows.Close()
+
+	var result []*model.Commenter
+	for rows.Next() {
+		var c model.Commenter
+		if err := rows.Scan(&c.ID, &c.Email, &c.Nickname, &c.AvatarSeed, &c.BlogURL, &c.Bio,
+			&c.RegIP, &c.RegUA, &c.RegFP, &c.CreatedAt, &c.UpdatedAt, &c.LastSeenAt); err != nil {
+			return nil, 0, fmt.Errorf("scan commenter: %w", err)
+		}
+		result = append(result, &c)
+	}
+	if result == nil {
+		result = []*model.Commenter{}
+	}
+	return result, total, nil
 }
 
 func (s *SQLiteStore) UpdateCommentStatus(ctx context.Context, id int64, status string) error {
@@ -1248,7 +1392,7 @@ func (s *SQLiteStore) GetRecentComments(ctx context.Context, siteID string, limi
 		SELECT c.id, c.page_slug, c.parent_id, c.content, c.created_at,
 		       u.id, u.nickname, u.avatar_seed, u.blog_url, u.bio
 		FROM comments c
-		JOIN commenters u ON c.commenter_id = u.id
+		LEFT JOIN commenters u ON c.commenter_id = u.id
 		WHERE c.site_id = ? AND c.status = 'approved'
 		ORDER BY c.created_at DESC LIMIT ?`, siteID, limit)
 	if err != nil {
@@ -1263,7 +1407,7 @@ func (s *SQLiteStore) GetHotComments(ctx context.Context, siteID string, limit i
 		SELECT c.id, c.page_slug, c.parent_id, c.content, c.created_at,
 		       u.id, u.nickname, u.avatar_seed, u.blog_url, u.bio
 		FROM comments c
-		JOIN commenters u ON c.commenter_id = u.id
+		LEFT JOIN commenters u ON c.commenter_id = u.id
 		JOIN (SELECT comment_id, COUNT(*) AS cnt FROM comment_reactions GROUP BY comment_id) r
 		  ON r.comment_id = c.id
 		WHERE c.site_id = ? AND c.status = 'approved'
@@ -1279,15 +1423,22 @@ func scanCommentsWithAuthor(rows *sql.Rows) ([]*model.CommentWithAuthor, error) 
 	var result []*model.CommentWithAuthor
 	for rows.Next() {
 		var c model.CommentWithAuthor
-		var author model.CommenterPublic
 		var createdAt time.Time
+		var authorID sql.NullInt64
+		var authorNickname, authorAvatar, authorBlog, authorBio sql.NullString
 		if err := rows.Scan(&c.ID, &c.PageSlug, &c.ParentID, &c.Content, &createdAt,
-			&author.ID, &author.Nickname, &author.AvatarSeed, &author.BlogURL, &author.Bio); err != nil {
+			&authorID, &authorNickname, &authorAvatar, &authorBlog, &authorBio); err != nil {
 			return nil, err
 		}
 		c.CreatedAt = createdAt.Format(time.RFC3339)
-		author.AvatarSeed = author.Nickname
-		c.Author = &author
+		if authorID.Valid {
+			c.Author = &model.CommenterPublic{
+				ID: authorID.Int64, Nickname: authorNickname.String,
+				AvatarSeed: authorNickname.String, BlogURL: authorBlog.String, Bio: authorBio.String,
+			}
+		} else {
+			c.Author = &model.CommenterPublic{ID: 0, Nickname: "作者", AvatarSeed: "admin"}
+		}
 		result = append(result, &c)
 	}
 	if result == nil {

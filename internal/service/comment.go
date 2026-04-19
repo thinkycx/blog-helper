@@ -347,6 +347,60 @@ func (s *CommentService) DeleteComment(ctx context.Context, id int64) error {
 	return s.store.DeleteComment(ctx, id)
 }
 
+// GetAllComments returns all comments (any status) with pagination.
+func (s *CommentService) GetAllComments(ctx context.Context, siteID string, limit, offset int) ([]*model.CommentWithAuthor, int, error) {
+	return s.store.GetAllComments(ctx, normalizeSiteID(siteID), limit, offset)
+}
+
+// GetAllCommenters returns all commenters with pagination.
+func (s *CommentService) GetAllCommenters(ctx context.Context, limit, offset int) ([]*model.Commenter, int, error) {
+	return s.store.GetAllCommenters(ctx, limit, offset)
+}
+
+// AdminReply creates a comment as the admin ("作者"), bypassing PoW and rate limits.
+func (s *CommentService) AdminReply(ctx context.Context, siteID, pageSlug, content string, parentID *int64) (*model.CommentWithAuthor, error) {
+	pageSlug = normalizeSlug(pageSlug)
+	siteID = normalizeSiteID(siteID)
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, fmt.Errorf("content is required")
+	}
+
+	comment, err := s.store.CreateComment(ctx, &model.Comment{
+		SiteID:      siteID,
+		PageSlug:    pageSlug,
+		CommenterID: 0, // admin marker
+		ParentID:    parentID,
+		Content:     content,
+		Status:      "approved",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create admin reply: %w", err)
+	}
+
+	return &model.CommentWithAuthor{
+		ID:        comment.ID,
+		SiteID:    comment.SiteID,
+		PageSlug:  comment.PageSlug,
+		ParentID:  comment.ParentID,
+		Content:   comment.Content,
+		Status:    comment.Status,
+		CreatedAt: comment.CreatedAt.Format("2006-01-02 15:04:05"),
+		Author:    &model.CommenterPublic{ID: 0, Nickname: "作者", AvatarSeed: "admin"},
+	}, nil
+}
+
+// SetCommentMode changes the comment mode at runtime (not persisted).
+func (s *CommentService) SetCommentMode(mode string) error {
+	switch mode {
+	case "off", "auto-approve", "moderation":
+		s.commentMode = mode
+		return nil
+	default:
+		return fmt.Errorf("invalid comment mode: %s", mode)
+	}
+}
+
 // GetCommentCounts returns comment counts for multiple slugs.
 func (s *CommentService) GetCommentCounts(ctx context.Context, siteID string, slugs []string) ([]*model.CommentCountItem, error) {
 	return s.store.GetCommentCounts(ctx, normalizeSiteID(siteID), slugs)

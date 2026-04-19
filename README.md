@@ -2,7 +2,7 @@
 
 [中文文档](README_zh.md)
 
-Lightweight analytics backend for static blogs — PV/UV tracking, popular articles, trend charts, and a built-in dashboard. One instance serves multiple sites, isolated by hostname.
+Lightweight analytics and comment system for static blogs — PV/UV tracking, popular articles, trend charts, comment moderation, and a built-in dashboard. One instance serves multiple sites, isolated by hostname.
 
 ![Dashboard](dashboard.jpg)
 
@@ -11,7 +11,7 @@ Lightweight analytics backend for static blogs — PV/UV tracking, popular artic
 - **Page View Tracking** — PV + UV per page, browser fingerprint dedup
 - **Batch Stats** — fetch counts for an article list in one request
 - **Popular Articles** — ranked by PV, configurable period (7d / 30d / all)
-- **Analytics Dashboard** — password-protected, with trend charts, referrers, visitors, and raw access logs
+- **Analytics Dashboard** — password-protected, with trend charts, referrers, visitors, raw access logs, and comment management
 - **Multi-Site** — one instance, N sites, data isolated by `site_id` (auto-detected from hostname)
 - **Comment System** — email-based identity, Markdown support, emoji reactions, cookie token persistence
 - **Page Reactions** — per-article heart button, independent of comment mode

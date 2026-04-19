@@ -38,11 +38,13 @@ func main() {
 	}
 	defer sqliteStore.Close()
 
-	// Initialize service
+	// Initialize services
 	svc := service.NewAnalyticsService(sqliteStore)
+	commentSvc := service.NewCommentService(sqliteStore, cfg.CommentMode)
 
 	// Initialize handlers
 	analyticsHandler := handler.NewAnalyticsHandler(svc)
+	commentHandler := handler.NewCommentHandler(commentSvc)
 	healthHandler := handler.NewHealthHandler(cfg.Version, cfg.Debug)
 	dashboardHandler := handler.NewDashboardHandler(cfg.Version)
 
@@ -64,11 +66,36 @@ func main() {
 	mux.HandleFunc("/api/v1/analytics/summary", analyticsHandler.HandleSummary)
 	mux.HandleFunc("/api/v1/health", healthHandler.HandleHealth)
 
+	// Comment config endpoint (always available for SDK auto-detect)
+	mux.HandleFunc("/api/v1/comments/config", commentHandler.HandleCommentConfig)
+
+	// Comment routes (only if comment-mode != off)
+	if cfg.CommentMode != "off" {
+		log.Printf("Comment mode: %s", cfg.CommentMode)
+		mux.HandleFunc("/api/v1/comments", commentHandler.HandleGetComments)
+		mux.HandleFunc("/api/v1/comments/post", commentHandler.HandlePostComment)
+		mux.HandleFunc("/api/v1/comments/count", commentHandler.HandleCommentCounts)
+		mux.HandleFunc("/api/v1/comments/challenge", commentHandler.HandleGetChallenge)
+		mux.HandleFunc("/api/v1/comments/react", commentHandler.HandleReact)
+		mux.HandleFunc("/api/v1/comments/recent", commentHandler.HandleRecentComments)
+		mux.HandleFunc("/api/v1/comments/hot", commentHandler.HandleHotComments)
+		mux.HandleFunc("/api/v1/page/react", commentHandler.HandlePageReact)
+		mux.HandleFunc("/api/v1/page/reactions", commentHandler.HandlePageReactions)
+		mux.HandleFunc("/api/v1/commenter/lookup", commentHandler.HandleLookupCommenter)
+		mux.HandleFunc("/api/v1/commenter/profile", commentHandler.HandleUpdateProfile)
+	}
+
 	// Protected routes (require dashboard password)
 	mux.Handle("/api/v1/dashboard", dashAuth(http.HandlerFunc(dashboardHandler.HandleDashboard)))
 	mux.Handle("/api/v1/analytics/views", dashAuth(http.HandlerFunc(analyticsHandler.HandleViews)))
 	mux.Handle("/api/v1/analytics/visitors", dashAuth(http.HandlerFunc(analyticsHandler.HandleVisitors)))
 	mux.Handle("/api/v1/analytics/visitor", dashAuth(http.HandlerFunc(analyticsHandler.HandleVisitorSearch)))
+
+	// Comment admin routes (always registered for dashboard management)
+	mux.Handle("/api/v1/comments/pending", dashAuth(http.HandlerFunc(commentHandler.HandlePendingComments)))
+	mux.Handle("/api/v1/comments/approve", dashAuth(http.HandlerFunc(commentHandler.HandleApproveComment)))
+	mux.Handle("/api/v1/comments/reject", dashAuth(http.HandlerFunc(commentHandler.HandleRejectComment)))
+	mux.Handle("/api/v1/comments/delete", dashAuth(http.HandlerFunc(commentHandler.HandleDeleteComment)))
 
 	// Apply middleware chain (outermost first)
 	var h http.Handler = mux

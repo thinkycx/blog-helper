@@ -63,6 +63,76 @@ type Store interface {
 	// slug="" means site-wide; days=0 means all time.
 	GetPeriodSummary(ctx context.Context, siteID, slug string, days int) (pv int64, uv int64, err error)
 
+	// --- Comment system ---
+
+	// CreateCommenter inserts a new commenter and returns the created record.
+	CreateCommenter(ctx context.Context, c *model.Commenter) (*model.Commenter, error)
+
+	// GetCommenterByEmail returns a commenter by email, or nil if not found.
+	GetCommenterByEmail(ctx context.Context, email string) (*model.Commenter, error)
+
+	// UpdateCommenterProfile updates editable fields (nickname, avatar_seed, blog_url, bio).
+	UpdateCommenterProfile(ctx context.Context, id int64, nickname, avatarSeed, blogURL, bio string) error
+
+	// CreateCommenterToken inserts a new token record.
+	CreateCommenterToken(ctx context.Context, t *model.CommenterToken) error
+
+	// GetCommenterByToken returns the commenter associated with a token, or nil if invalid.
+	GetCommenterByToken(ctx context.Context, token string) (*model.Commenter, error)
+
+	// UpdateLastSeen updates the commenter's last_seen_at timestamp.
+	UpdateLastSeen(ctx context.Context, commenterID int64) error
+
+	// CreateComment inserts a new comment.
+	CreateComment(ctx context.Context, c *model.Comment) (*model.Comment, error)
+
+	// GetCommentsBySlug returns approved comments for a page, joined with author info.
+	GetCommentsBySlug(ctx context.Context, siteID, slug string) ([]*model.CommentWithAuthor, error)
+
+	// GetPendingComments returns comments awaiting moderation.
+	GetPendingComments(ctx context.Context, siteID string) ([]*model.CommentWithAuthor, error)
+
+	// UpdateCommentStatus sets a comment's status (approved, rejected).
+	UpdateCommentStatus(ctx context.Context, id int64, status string) error
+
+	// DeleteComment removes a comment by ID.
+	DeleteComment(ctx context.Context, id int64) error
+
+	// GetCommentCounts returns comment counts for multiple slugs.
+	GetCommentCounts(ctx context.Context, siteID string, slugs []string) ([]*model.CommentCountItem, error)
+
+	// AddReaction adds an emoji reaction (idempotent per fingerprint).
+	AddReaction(ctx context.Context, commentID int64, emoji, fingerprint string) error
+
+	// RemoveReaction removes an emoji reaction.
+	RemoveReaction(ctx context.Context, commentID int64, emoji, fingerprint string) error
+
+	// GetReactionsByCommentIDs returns aggregated reaction counts per comment.
+	GetReactionsByCommentIDs(ctx context.Context, commentIDs []int64) (map[int64][]model.ReactionCount, error)
+
+	// GetUserReactions returns which emojis the given fingerprint has reacted with.
+	GetUserReactions(ctx context.Context, commentIDs []int64, fingerprint string) (map[int64][]string, error)
+
+	// GetRecentComments returns the most recent approved comments across all pages.
+	GetRecentComments(ctx context.Context, siteID string, limit int) ([]*model.CommentWithAuthor, error)
+
+	// GetHotComments returns comments with the most reactions.
+	GetHotComments(ctx context.Context, siteID string, limit int) ([]*model.CommentWithAuthor, error)
+
+	// --- Page reactions ---
+
+	// AddPageReaction adds an emoji reaction to a page (idempotent per fingerprint).
+	AddPageReaction(ctx context.Context, siteID, pageSlug, emoji, fingerprint string) error
+
+	// RemovePageReaction removes an emoji reaction from a page.
+	RemovePageReaction(ctx context.Context, siteID, pageSlug, emoji, fingerprint string) error
+
+	// GetPageReactions returns aggregated reaction counts for a page.
+	GetPageReactions(ctx context.Context, siteID, pageSlug string) ([]model.ReactionCount, error)
+
+	// GetUserPageReactions returns which emojis the given fingerprint has reacted with on a page.
+	GetUserPageReactions(ctx context.Context, siteID, pageSlug, fingerprint string) ([]string, error)
+
 	// Close closes the underlying database connection.
 	Close() error
 }

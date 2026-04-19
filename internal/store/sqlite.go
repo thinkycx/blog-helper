@@ -58,6 +58,71 @@ CREATE TABLE IF NOT EXISTS site_daily_stats (
     uv_count      INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (site_id, date)
 );
+
+-- Comment system tables
+CREATE TABLE IF NOT EXISTS commenters (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    email         TEXT    NOT NULL UNIQUE,
+    nickname      TEXT    NOT NULL,
+    avatar_seed   TEXT    NOT NULL DEFAULT '',
+    blog_url      TEXT    NOT NULL DEFAULT '',
+    bio           TEXT    NOT NULL DEFAULT '',
+    reg_ip        TEXT    NOT NULL DEFAULT '',
+    reg_ua        TEXT    NOT NULL DEFAULT '',
+    reg_fp        TEXT    NOT NULL DEFAULT '',
+    created_at    DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated_at    DATETIME NOT NULL DEFAULT (datetime('now')),
+    last_seen_at  DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS commenter_tokens (
+    token         TEXT    PRIMARY KEY,
+    commenter_id  INTEGER NOT NULL,
+    site_id       TEXT    NOT NULL DEFAULT '',
+    device_info   TEXT    NOT NULL DEFAULT '',
+    created_at    DATETIME NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (commenter_id) REFERENCES commenters(id)
+);
+CREATE INDEX IF NOT EXISTS idx_ct_commenter ON commenter_tokens(commenter_id);
+
+CREATE TABLE IF NOT EXISTS comments (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id       TEXT    NOT NULL DEFAULT '',
+    page_slug     TEXT    NOT NULL,
+    commenter_id  INTEGER NOT NULL,
+    parent_id     INTEGER,
+    content       TEXT    NOT NULL,
+    status        TEXT    NOT NULL DEFAULT 'pending',
+    ip            TEXT    NOT NULL DEFAULT '',
+    user_agent    TEXT    NOT NULL DEFAULT '',
+    fingerprint   TEXT    NOT NULL DEFAULT '',
+    created_at    DATETIME NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (commenter_id) REFERENCES commenters(id)
+);
+CREATE INDEX IF NOT EXISTS idx_comments_site_slug   ON comments(site_id, page_slug);
+CREATE INDEX IF NOT EXISTS idx_comments_status      ON comments(site_id, status);
+CREATE INDEX IF NOT EXISTS idx_comments_commenter   ON comments(commenter_id);
+
+CREATE TABLE IF NOT EXISTS comment_reactions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    comment_id  INTEGER NOT NULL REFERENCES comments(id),
+    emoji       TEXT    NOT NULL,
+    fingerprint TEXT    NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(comment_id, emoji, fingerprint)
+);
+CREATE INDEX IF NOT EXISTS idx_reactions_comment ON comment_reactions(comment_id);
+
+CREATE TABLE IF NOT EXISTS page_reactions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id     TEXT    NOT NULL,
+    page_slug   TEXT    NOT NULL,
+    emoji       TEXT    NOT NULL,
+    fingerprint TEXT    NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(site_id, page_slug, emoji, fingerprint)
+);
+CREATE INDEX IF NOT EXISTS idx_page_reactions_slug ON page_reactions(site_id, page_slug);
 `
 
 
@@ -866,6 +931,432 @@ func extractDomain(referrer string) string {
 		return strings.ToLower(u.Host)
 	}
 	return strings.ToLower(referrer)
+}
+
+// --- Comment system Store methods ---
+
+func (s *SQLiteStore) CreateCommenter(ctx context.Context, c *model.Commenter) (*model.Commenter, error) {
+	now := time.Now().UTC().Format("2006-01-02 15:04:05")
+	res, err := s.db.ExecContext(ctx, `
+		INSERT INTO commenters (email, nickname, avatar_seed, blog_url, bio, reg_ip, reg_ua, reg_fp, created_at, updated_at, last_seen_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.Email, c.Nickname, c.AvatarSeed, c.BlogURL, c.Bio,
+		c.RegIP, c.RegUA, c.RegFP, now, now, now)
+	if err != nil {
+		return nil, fmt.Errorf("create commenter: %w", err)
+	}
+	id, _ := res.LastInsertId()
+	c.ID = id
+	return c, nil
+}
+
+func (s *SQLiteStore) GetCommenterByEmail(ctx context.Context, email string) (*model.Commenter, error) {
+	var c model.Commenter
+	var lastSeen sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, email, nickname, avatar_seed, blog_url, bio, reg_ip, reg_ua, reg_fp, created_at, updated_at, last_seen_at
+		FROM commenters WHERE email = ?`, email).Scan(
+		&c.ID, &c.Email, &c.Nickname, &c.AvatarSeed, &c.BlogURL, &c.Bio,
+		&c.RegIP, &c.RegUA, &c.RegFP, &c.CreatedAt, &c.UpdatedAt, &lastSeen)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get commenter by email: %w", err)
+	}
+	if lastSeen.Valid {
+		t, _ := time.Parse("2006-01-02 15:04:05", lastSeen.String)
+		c.LastSeenAt = &t
+	}
+	return &c, nil
+}
+
+func (s *SQLiteStore) UpdateCommenterProfile(ctx context.Context, id int64, nickname, avatarSeed, blogURL, bio string) error {
+	now := time.Now().UTC().Format("2006-01-02 15:04:05")
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE commenters SET nickname = ?, avatar_seed = ?, blog_url = ?, bio = ?, updated_at = ?
+		WHERE id = ?`, nickname, avatarSeed, blogURL, bio, now, id)
+	if err != nil {
+		return fmt.Errorf("update commenter profile: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) CreateCommenterToken(ctx context.Context, t *model.CommenterToken) error {
+	now := time.Now().UTC().Format("2006-01-02 15:04:05")
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO commenter_tokens (token, commenter_id, site_id, device_info, created_at)
+		VALUES (?, ?, ?, ?, ?)`, t.Token, t.CommenterID, t.SiteID, t.DeviceInfo, now)
+	if err != nil {
+		return fmt.Errorf("create commenter token: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) GetCommenterByToken(ctx context.Context, token string) (*model.Commenter, error) {
+	var c model.Commenter
+	var lastSeen sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+		SELECT c.id, c.email, c.nickname, c.avatar_seed, c.blog_url, c.bio,
+		       c.reg_ip, c.reg_ua, c.reg_fp, c.created_at, c.updated_at, c.last_seen_at
+		FROM commenters c
+		JOIN commenter_tokens t ON t.commenter_id = c.id
+		WHERE t.token = ?`, token).Scan(
+		&c.ID, &c.Email, &c.Nickname, &c.AvatarSeed, &c.BlogURL, &c.Bio,
+		&c.RegIP, &c.RegUA, &c.RegFP, &c.CreatedAt, &c.UpdatedAt, &lastSeen)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get commenter by token: %w", err)
+	}
+	if lastSeen.Valid {
+		t, _ := time.Parse("2006-01-02 15:04:05", lastSeen.String)
+		c.LastSeenAt = &t
+	}
+	return &c, nil
+}
+
+func (s *SQLiteStore) UpdateLastSeen(ctx context.Context, commenterID int64) error {
+	now := time.Now().UTC().Format("2006-01-02 15:04:05")
+	_, err := s.db.ExecContext(ctx, `UPDATE commenters SET last_seen_at = ? WHERE id = ?`, now, commenterID)
+	if err != nil {
+		return fmt.Errorf("update last seen: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) CreateComment(ctx context.Context, c *model.Comment) (*model.Comment, error) {
+	now := time.Now().UTC().Format("2006-01-02 15:04:05")
+	res, err := s.db.ExecContext(ctx, `
+		INSERT INTO comments (site_id, page_slug, commenter_id, parent_id, content, status, ip, user_agent, fingerprint, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.SiteID, c.PageSlug, c.CommenterID, c.ParentID, c.Content, c.Status,
+		c.IP, c.UserAgent, c.Fingerprint, now)
+	if err != nil {
+		return nil, fmt.Errorf("create comment: %w", err)
+	}
+	id, _ := res.LastInsertId()
+	c.ID = id
+	c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", now)
+	return c, nil
+}
+
+func (s *SQLiteStore) GetCommentsBySlug(ctx context.Context, siteID, slug string) ([]*model.CommentWithAuthor, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT c.id, c.page_slug, c.parent_id, c.content, c.created_at,
+		       u.id, u.nickname, u.avatar_seed, u.blog_url, u.bio
+		FROM comments c
+		JOIN commenters u ON u.id = c.commenter_id
+		WHERE c.site_id = ? AND c.page_slug = ? AND c.status = 'approved'
+		ORDER BY c.created_at ASC`, siteID, slug)
+	if err != nil {
+		return nil, fmt.Errorf("get comments by slug: %w", err)
+	}
+	defer rows.Close()
+
+	var result []*model.CommentWithAuthor
+	for rows.Next() {
+		var cwa model.CommentWithAuthor
+		var author model.CommenterPublic
+		var parentID sql.NullInt64
+		if err := rows.Scan(&cwa.ID, &cwa.PageSlug, &parentID, &cwa.Content, &cwa.CreatedAt,
+			&author.ID, &author.Nickname, &author.AvatarSeed, &author.BlogURL, &author.Bio); err != nil {
+			return nil, fmt.Errorf("scan comment: %w", err)
+		}
+		if parentID.Valid {
+			pid := parentID.Int64
+			cwa.ParentID = &pid
+		}
+		cwa.Author = &author
+		result = append(result, &cwa)
+	}
+	if result == nil {
+		result = []*model.CommentWithAuthor{}
+	}
+	return result, nil
+}
+
+func (s *SQLiteStore) GetPendingComments(ctx context.Context, siteID string) ([]*model.CommentWithAuthor, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT c.id, c.site_id, c.page_slug, c.parent_id, c.content, c.status, c.ip, c.user_agent, c.created_at,
+		       u.id, u.nickname, u.avatar_seed, u.blog_url, u.bio
+		FROM comments c
+		JOIN commenters u ON u.id = c.commenter_id
+		WHERE c.site_id = ? AND c.status = 'pending'
+		ORDER BY c.created_at DESC`, siteID)
+	if err != nil {
+		return nil, fmt.Errorf("get pending comments: %w", err)
+	}
+	defer rows.Close()
+
+	var result []*model.CommentWithAuthor
+	for rows.Next() {
+		var cwa model.CommentWithAuthor
+		var author model.CommenterPublic
+		var parentID sql.NullInt64
+		if err := rows.Scan(&cwa.ID, &cwa.SiteID, &cwa.PageSlug, &parentID, &cwa.Content, &cwa.Status,
+			&cwa.IP, &cwa.UserAgent, &cwa.CreatedAt,
+			&author.ID, &author.Nickname, &author.AvatarSeed, &author.BlogURL, &author.Bio); err != nil {
+			return nil, fmt.Errorf("scan pending comment: %w", err)
+		}
+		if parentID.Valid {
+			pid := parentID.Int64
+			cwa.ParentID = &pid
+		}
+		cwa.Author = &author
+		result = append(result, &cwa)
+	}
+	if result == nil {
+		result = []*model.CommentWithAuthor{}
+	}
+	return result, nil
+}
+
+func (s *SQLiteStore) UpdateCommentStatus(ctx context.Context, id int64, status string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE comments SET status = ? WHERE id = ?`, status, id)
+	if err != nil {
+		return fmt.Errorf("update comment status: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) DeleteComment(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM comments WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete comment: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) GetCommentCounts(ctx context.Context, siteID string, slugs []string) ([]*model.CommentCountItem, error) {
+	if len(slugs) == 0 {
+		return []*model.CommentCountItem{}, nil
+	}
+	placeholders := make([]string, len(slugs))
+	args := make([]interface{}, 0, len(slugs)+1)
+	args = append(args, siteID)
+	for i, slug := range slugs {
+		placeholders[i] = "?"
+		args = append(args, slug)
+	}
+	query := fmt.Sprintf(`
+		SELECT page_slug, COUNT(*) FROM comments
+		WHERE site_id = ? AND page_slug IN (%s) AND status = 'approved'
+		GROUP BY page_slug`, strings.Join(placeholders, ","))
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get comment counts: %w", err)
+	}
+	defer rows.Close()
+
+	var result []*model.CommentCountItem
+	for rows.Next() {
+		var item model.CommentCountItem
+		if err := rows.Scan(&item.PageSlug, &item.Count); err != nil {
+			return nil, fmt.Errorf("scan comment count: %w", err)
+		}
+		result = append(result, &item)
+	}
+	if result == nil {
+		result = []*model.CommentCountItem{}
+	}
+	return result, nil
+}
+
+// --- Reactions ---
+
+func (s *SQLiteStore) AddReaction(ctx context.Context, commentID int64, emoji, fingerprint string) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO comment_reactions (comment_id, emoji, fingerprint) VALUES (?, ?, ?)`,
+		commentID, emoji, fingerprint)
+	return err
+}
+
+func (s *SQLiteStore) RemoveReaction(ctx context.Context, commentID int64, emoji, fingerprint string) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM comment_reactions WHERE comment_id = ? AND emoji = ? AND fingerprint = ?`,
+		commentID, emoji, fingerprint)
+	return err
+}
+
+func (s *SQLiteStore) GetReactionsByCommentIDs(ctx context.Context, commentIDs []int64) (map[int64][]model.ReactionCount, error) {
+	if len(commentIDs) == 0 {
+		return map[int64][]model.ReactionCount{}, nil
+	}
+	placeholders := make([]string, len(commentIDs))
+	args := make([]interface{}, len(commentIDs))
+	for i, id := range commentIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	query := `SELECT comment_id, emoji, COUNT(*) FROM comment_reactions
+		WHERE comment_id IN (` + strings.Join(placeholders, ",") + `)
+		GROUP BY comment_id, emoji ORDER BY COUNT(*) DESC`
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := map[int64][]model.ReactionCount{}
+	for rows.Next() {
+		var cid int64
+		var rc model.ReactionCount
+		if err := rows.Scan(&cid, &rc.Emoji, &rc.Count); err != nil {
+			return nil, err
+		}
+		result[cid] = append(result[cid], rc)
+	}
+	return result, nil
+}
+
+func (s *SQLiteStore) GetUserReactions(ctx context.Context, commentIDs []int64, fingerprint string) (map[int64][]string, error) {
+	if len(commentIDs) == 0 || fingerprint == "" {
+		return map[int64][]string{}, nil
+	}
+	placeholders := make([]string, len(commentIDs))
+	args := make([]interface{}, len(commentIDs))
+	for i, id := range commentIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	args = append(args, fingerprint)
+	query := `SELECT comment_id, emoji FROM comment_reactions
+		WHERE comment_id IN (` + strings.Join(placeholders, ",") + `) AND fingerprint = ?`
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := map[int64][]string{}
+	for rows.Next() {
+		var cid int64
+		var emoji string
+		if err := rows.Scan(&cid, &emoji); err != nil {
+			return nil, err
+		}
+		result[cid] = append(result[cid], emoji)
+	}
+	return result, nil
+}
+
+// --- Recent & Hot comments ---
+
+func (s *SQLiteStore) GetRecentComments(ctx context.Context, siteID string, limit int) ([]*model.CommentWithAuthor, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT c.id, c.page_slug, c.parent_id, c.content, c.created_at,
+		       u.id, u.nickname, u.avatar_seed, u.blog_url, u.bio
+		FROM comments c
+		JOIN commenters u ON c.commenter_id = u.id
+		WHERE c.site_id = ? AND c.status = 'approved'
+		ORDER BY c.created_at DESC LIMIT ?`, siteID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanCommentsWithAuthor(rows)
+}
+
+func (s *SQLiteStore) GetHotComments(ctx context.Context, siteID string, limit int) ([]*model.CommentWithAuthor, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT c.id, c.page_slug, c.parent_id, c.content, c.created_at,
+		       u.id, u.nickname, u.avatar_seed, u.blog_url, u.bio
+		FROM comments c
+		JOIN commenters u ON c.commenter_id = u.id
+		JOIN (SELECT comment_id, COUNT(*) AS cnt FROM comment_reactions GROUP BY comment_id) r
+		  ON r.comment_id = c.id
+		WHERE c.site_id = ? AND c.status = 'approved'
+		ORDER BY r.cnt DESC, c.created_at DESC LIMIT ?`, siteID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanCommentsWithAuthor(rows)
+}
+
+func scanCommentsWithAuthor(rows *sql.Rows) ([]*model.CommentWithAuthor, error) {
+	var result []*model.CommentWithAuthor
+	for rows.Next() {
+		var c model.CommentWithAuthor
+		var author model.CommenterPublic
+		var createdAt time.Time
+		if err := rows.Scan(&c.ID, &c.PageSlug, &c.ParentID, &c.Content, &createdAt,
+			&author.ID, &author.Nickname, &author.AvatarSeed, &author.BlogURL, &author.Bio); err != nil {
+			return nil, err
+		}
+		c.CreatedAt = createdAt.Format(time.RFC3339)
+		author.AvatarSeed = author.Nickname
+		c.Author = &author
+		result = append(result, &c)
+	}
+	if result == nil {
+		result = []*model.CommentWithAuthor{}
+	}
+	return result, nil
+}
+
+// --- Page reactions ---
+
+func (s *SQLiteStore) AddPageReaction(ctx context.Context, siteID, pageSlug, emoji, fingerprint string) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO page_reactions (site_id, page_slug, emoji, fingerprint) VALUES (?, ?, ?, ?)`,
+		siteID, pageSlug, emoji, fingerprint)
+	return err
+}
+
+func (s *SQLiteStore) RemovePageReaction(ctx context.Context, siteID, pageSlug, emoji, fingerprint string) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM page_reactions WHERE site_id = ? AND page_slug = ? AND emoji = ? AND fingerprint = ?`,
+		siteID, pageSlug, emoji, fingerprint)
+	return err
+}
+
+func (s *SQLiteStore) GetPageReactions(ctx context.Context, siteID, pageSlug string) ([]model.ReactionCount, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT emoji, COUNT(*) FROM page_reactions WHERE site_id = ? AND page_slug = ? GROUP BY emoji ORDER BY COUNT(*) DESC`,
+		siteID, pageSlug)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []model.ReactionCount
+	for rows.Next() {
+		var rc model.ReactionCount
+		if err := rows.Scan(&rc.Emoji, &rc.Count); err != nil {
+			return nil, err
+		}
+		result = append(result, rc)
+	}
+	if result == nil {
+		result = []model.ReactionCount{}
+	}
+	return result, nil
+}
+
+func (s *SQLiteStore) GetUserPageReactions(ctx context.Context, siteID, pageSlug, fingerprint string) ([]string, error) {
+	if fingerprint == "" {
+		return []string{}, nil
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT emoji FROM page_reactions WHERE site_id = ? AND page_slug = ? AND fingerprint = ?`,
+		siteID, pageSlug, fingerprint)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []string
+	for rows.Next() {
+		var emoji string
+		if err := rows.Scan(&emoji); err != nil {
+			return nil, err
+		}
+		result = append(result, emoji)
+	}
+	if result == nil {
+		result = []string{}
+	}
+	return result, nil
 }
 
 // Close closes the database connection.

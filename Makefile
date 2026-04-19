@@ -32,6 +32,7 @@ run:
 	@lsof -ti :9001 2>/dev/null | xargs kill -9 2>/dev/null || true
 	go run ./cmd/server/ -addr 127.0.0.1:9001 -db ./data/blog-helper.db \
 		-allowed-origins "http://localhost:4000,http://localhost:4001,http://127.0.0.1:4000" \
+		-comment-mode auto-approve \
 		-debug
 
 # Start dev server for primary site on :4000 (run in terminal 2)

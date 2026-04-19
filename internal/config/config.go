@@ -14,6 +14,7 @@ type Config struct {
 	Version           string   // Server version (injected at build time)
 	Debug             bool     // Debug mode: expose version in health endpoint
 	DashboardPassword string   // Password for dashboard access (default: "helper")
+	CommentMode       string   // Comment mode: "off", "auto-approve", "moderation"
 }
 
 // Parse reads configuration from command-line flags and environment variables.
@@ -28,6 +29,7 @@ func Parse(version string) *Config {
 	flag.StringVar(&origins, "allowed-origins", "https://your-site.com", "Comma-separated CORS allowed origins")
 	flag.BoolVar(&cfg.Debug, "debug", false, "Debug mode (expose version in health endpoint)")
 	flag.StringVar(&cfg.DashboardPassword, "dashboard-pass", "helper", "Dashboard access password")
+	flag.StringVar(&cfg.CommentMode, "comment-mode", "off", "Comment mode: off, auto-approve, moderation")
 
 	flag.Parse()
 
@@ -43,6 +45,9 @@ func Parse(version string) *Config {
 	}
 	if v := os.Getenv("BH_DASHBOARD_PASS"); v != "" {
 		cfg.DashboardPassword = v
+	}
+	if v := os.Getenv("BH_COMMENT_MODE"); v != "" {
+		cfg.CommentMode = v
 	}
 
 	cfg.AllowedOrigins = parseOrigins(origins)

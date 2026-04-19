@@ -4,9 +4,14 @@
 
 Lightweight analytics and comment system for static blogs — PV/UV tracking, popular articles, trend charts, comment moderation, and a built-in dashboard. One instance serves multiple sites, isolated by hostname.
 
+**Analytics Dashboard**
 ![Dashboard](dashboard.jpg)
-![Dashboard Comments](dashboard2.jpg)
+
+**Comment Section on Blog Post**
 ![Comments](comments.jpg)
+
+**Comment Management**
+![Dashboard Comments](dashboard2.jpg)
 
 ## Features
 

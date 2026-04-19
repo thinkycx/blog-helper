@@ -13,7 +13,9 @@ Lightweight analytics backend for static blogs — PV/UV tracking, popular artic
 - **Popular Articles** — ranked by PV, configurable period (7d / 30d / all)
 - **Analytics Dashboard** — password-protected, with trend charts, referrers, visitors, and raw access logs
 - **Multi-Site** — one instance, N sites, data isolated by `site_id` (auto-detected from hostname)
-- **Zero-Dependency SDK** — single JS file (~8KB), auto-detects page type, renders stats into your theme
+- **Comment System** — email-based identity, Markdown support, emoji reactions, cookie token persistence
+- **Page Reactions** — per-article heart button, independent of comment mode
+- **Zero-Dependency SDK** — single JS file + CSS, auto-detects page type, renders stats into your theme
 - **Graceful Degradation** — backend down? Blog works normally, no JS errors
 
 ## Quick Start
@@ -144,14 +146,28 @@ Password-protected at `/api/v1/dashboard`. Set via `-dashboard-pass` flag or `BH
 | `-db` | `BH_DB` | `./data/blog-helper.db` | SQLite database path |
 | `-allowed-origins` | `BH_ALLOWED_ORIGINS` | `https://your-site.com` | CORS origins (comma-separated) |
 | `-dashboard-pass` | `BH_DASHBOARD_PASS` | `helper` | Dashboard login password |
+| `-comment-mode` | `BH_COMMENT_MODE` | `off` | Comment mode: `off`, `auto-approve`, `moderation` |
 | `-debug` | — | `false` | Expose version in health endpoint |
+
+## Comment System
+
+Enable with `-comment-mode auto-approve` (or `moderation` for manual review).
+
+**Features**: email-based identity with cookie token, threaded replies, Markdown (Write/Preview tabs), emoji reactions on comments and pages, profile editing (blog URL, bio).
+
+**Per-site control**: SDK `showComments` option — `true` (always on), `"auto"` (detect from backend, default), `false` (disabled). Page reactions (heart) work independently regardless of comment mode.
+
+**Anti-bot**: Proof-of-Work (SHA-256 prefix challenge), rate limit (5 comments/IP/minute), honeypot field.
 
 ## Anti-Abuse
 
 | Layer | Mechanism | Detail |
 |-------|-----------|--------|
-| Backend | Sliding window dedup | Same fingerprint + slug within 30s |
-| Backend | Bot UA filter | Googlebot, etc. excluded |
+| Analytics | Sliding window dedup | Same fingerprint + slug within 30s |
+| Analytics | Bot UA filter | Googlebot, etc. excluded |
+| Comments | Proof-of-Work | SHA-256 challenge before each post |
+| Comments | Rate limit | 5 comments per IP per minute |
+| Comments | Honeypot | Hidden field traps bots |
 | Nginx (optional) | `limit_req` per IP | Recommended: 10 req/s, burst 20 |
 
 ## Deployment
@@ -209,16 +225,24 @@ blog-helper/
 ├── internal/
 │   ├── config/config.go            # Flags + env vars
 │   ├── handler/
-│   │   ├── analytics.go            # API handlers
+│   │   ├── analytics.go            # Analytics API handlers
+│   │   ├── comment.go              # Comment API handlers
 │   │   ├── dashboard.go            # Dashboard UI (single-page)
 │   │   ├── health.go               # Health check
 │   │   └── middleware.go           # CORS, logging, recovery, auth
-│   ├── model/analytics.go          # Domain types
+│   ├── model/
+│   │   ├── analytics.go            # Analytics domain types
+│   │   └── comment.go             # Comment domain types
 │   ├── store/
 │   │   ├── store.go                # Repository interface
 │   │   └── sqlite.go              # SQLite implementation
-│   └── service/analytics.go        # Dedup, bot filter, rate limit
-├── sdk/blog-helper.js              # Frontend SDK (~8KB)
+│   └── service/
+│       ├── analytics.go            # Dedup, bot filter, rate limit
+│       └── comment.go             # Comment business logic
+├── sdk/
+│   ├── blog-helper.js              # Frontend SDK
+│   ├── blog-helper.css             # SDK styles
+│   └── lib/marked.min.js           # Markdown parser (local)
 ├── scripts/dev-server.py           # Dev server (static + proxy)
 └── Makefile
 ```

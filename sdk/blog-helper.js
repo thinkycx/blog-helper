@@ -49,7 +49,7 @@
       trendDays: 30,
       referrersDays: 30,
       referrersLimit: 10,
-      showComments: false,
+      showComments: "auto",
     },
     pvLabel: "阅读",
     uvLabel: "观众",
@@ -842,7 +842,13 @@
 
     var bar = document.createElement("div");
     bar.className = "bh-page-reactions";
-    container.appendChild(bar);
+    // Insert after post-content (before gitalk/comments), fallback to append
+    var postContent = container.querySelector(".post-content, .markdown-body");
+    if (postContent) {
+      postContent.parentNode.insertBefore(bar, postContent.nextSibling);
+    } else {
+      container.appendChild(bar);
+    }
 
     // Initial render from API
     getFingerprint().then(function (fp) {
@@ -1830,13 +1836,12 @@
         renderPageReactions(config, commentSlug);
       }));
 
-      // Comment section — only if comments enabled
-      if (config.features.showComments) {
+      // Comment section: true = render, "auto" = detect from backend, false = skip
+      if (config.features.showComments === true) {
         promises.push(Promise.resolve().then(function () {
           renderCommentSection(config, commentSlug);
         }));
-      } else {
-        // Auto-detect from backend
+      } else if (config.features.showComments === "auto") {
         promises.push(
           fetch(commentApiBase(config) + "/comments/config", { credentials: "same-origin" })
             .then(function (r) { return r.json(); })
@@ -1851,18 +1856,21 @@
     }
 
     // Sidebar: recent comments + hot comments (only if comments enabled)
-    promises.push(
-      fetch(commentApiBase(config) + "/comments/config", { credentials: "same-origin" })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (!d.ok || !d.data || !d.data.enabled) return;
-          return Promise.all([
-            apiRecentComments(config, 5).then(function (data) { renderSidebarComments(config, data, "#bh-recent-comments-mount", "Recent Comments"); }),
-            apiHotComments(config, 5).then(function (data) { renderSidebarComments(config, data, "#bh-hot-comments-mount", "Hot Comments"); }),
-          ]);
-        })
-        .catch(function () { /* silent */ })
-    );
+    // Sidebar: recent + hot comments (only if comments not explicitly disabled)
+    if (config.features.showComments !== false) {
+      promises.push(
+        fetch(commentApiBase(config) + "/comments/config", { credentials: "same-origin" })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (!d.ok || !d.data || !d.data.enabled) return;
+            return Promise.all([
+              apiRecentComments(config, 5).then(function (data) { renderSidebarComments(config, data, "#bh-recent-comments-mount", "Recent Comments"); }),
+              apiHotComments(config, 5).then(function (data) { renderSidebarComments(config, data, "#bh-hot-comments-mount", "Hot Comments"); }),
+            ]);
+          })
+          .catch(function () { /* silent */ })
+      );
+    }
 
     // Execute all in parallel
     Promise.all(promises).catch(function () {

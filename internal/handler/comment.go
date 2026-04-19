@@ -148,6 +148,11 @@ func (h *CommentHandler) HandlePostComment(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Set HttpOnly cookie so subsequent requests carry the token
+	if resp.Token != "" {
+		setCommenterCookie(w, resp.Token)
+	}
+
 	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: resp})
 }
 

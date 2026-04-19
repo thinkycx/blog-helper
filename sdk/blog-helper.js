@@ -1217,12 +1217,12 @@
     slug = slug || getCurrentSlug();
     var form = section.querySelector(".bh-comment-form");
     var me = state.me;
-    var token = getCommenterToken();
+    var hasToken = !!me; // token is HttpOnly; rely on server-set state.me
 
     var formHeader = '';
     var identityFields = '';
 
-    if (me && token) {
+    if (me && hasToken) {
       // Logged-in: show user badge with unified tooltip (same as comment authors)
       var avatar = generateAvatar(me.nickname || '?', 24);
       var meBlogUrl = normalizeBlogUrl(me.blog_url);
@@ -1433,7 +1433,7 @@
       var blogUrlEl = form.querySelector('input[name="blog_url"]');
       var blogUrl = blogUrlEl ? blogUrlEl.value.trim() : "";
 
-      if (!token) {
+      if (!hasToken) {
         // Validate email
         if (!email.trim()) {
           msgEl.className = "bh-form-msg bh-error";
@@ -1498,10 +1498,7 @@
         submitBtn.disabled = false;
 
         if (resp.ok) {
-          // Save token
-          if (resp.data.token) {
-            setCommenterToken(resp.data.token);
-          }
+          // Token is set as HttpOnly cookie by the server response
           if (resp.data.me) {
             state.me = resp.data.me;
           }

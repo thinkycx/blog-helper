@@ -116,6 +116,12 @@ class DevHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(405)
             self.end_headers()
 
+    # ----- Disable cache for dev -----
+
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        super().end_headers()
+
     # ----- Better MIME types -----
 
     def guess_type(self, path):

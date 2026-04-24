@@ -1,6 +1,6 @@
 # Blog Helper
 
-[English](README.md)
+[English](README.md) | [开发背景](https://thinkycx.me/2026-04-19-blog-helper-for-static-blog.html) | [Ruan Yifeng 科技爱好者周刊推荐](https://www.ruanyifeng.com/blog/2026/04/weekly-issue-394.html)
 
 轻量级静态博客分析与评论系统 — PV/UV 统计、热门文章、趋势图、评论审核管理、内置 Dashboard。一个实例服务多个站点，按域名自动隔离数据。
 

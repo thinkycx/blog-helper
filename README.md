@@ -1,6 +1,6 @@
 # Blog Helper
 
-[中文文档](README_zh.md) | [Background](https://thinkycx.me/2026-04-19-blog-helper-for-static-blog.html) | [Recommended by Ruan Yifeng's Weekly](https://www.ruanyifeng.com/blog/2026/04/weekly-issue-394.html)
+[中文文档](README_zh.md) | [Background](https://thinkycx.me/2026-04-19-blog-helper-for-static-blog.html) | [Featured in Ruan Yifeng's Weekly](https://www.ruanyifeng.com/blog/2026/04/weekly-issue-394.html)
 
 Lightweight analytics and comment system for static blogs — PV/UV tracking, popular articles, trend charts, comment moderation, and a built-in dashboard. One instance serves multiple sites, isolated by hostname.
 

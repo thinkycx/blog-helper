@@ -414,6 +414,54 @@ func (h *CommentHandler) HandlePageReactions(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: resp})
 }
 
+// HandleBatchPageReactions handles POST /api/v1/page/reactions/batch
+func (h *CommentHandler) HandleBatchPageReactions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only POST is allowed")
+		return
+	}
+
+	var req struct {
+		SiteID string   `json:"site_id"`
+		Slugs  []string `json:"slugs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid request body")
+		return
+	}
+	if len(req.Slugs) == 0 {
+		writeError(w, http.StatusBadRequest, "MISSING_FIELD", "slugs array is required")
+		return
+	}
+	if len(req.Slugs) > 100 {
+		writeError(w, http.StatusBadRequest, "TOO_MANY", "Maximum 100 slugs per request")
+		return
+	}
+
+	siteID := req.SiteID
+	if siteID == "" {
+		siteID = extractSiteID(r)
+	}
+
+	reactionsMap, err := h.svc.BatchGetPageReactions(r.Context(), siteID, req.Slugs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "Failed to get batch page reactions")
+		return
+	}
+
+	// Convert to response format: { slug: { "❤️": 3 } }
+	data := make(map[string]map[string]int, len(reactionsMap))
+	for slug, reactions := range reactionsMap {
+		emojiMap := make(map[string]int)
+		for _, rc := range reactions {
+			emojiMap[rc.Emoji] = rc.Count
+		}
+		data[slug] = emojiMap
+	}
+
+	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: data})
+}
+
 // --- Dashboard (admin) handlers ---
 
 // HandlePendingComments handles GET /api/v1/comments/pending?site_id=

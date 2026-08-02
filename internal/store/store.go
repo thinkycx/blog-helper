@@ -136,6 +136,9 @@ type Store interface {
 	// GetPageReactions returns aggregated reaction counts for a page.
 	GetPageReactions(ctx context.Context, siteID, pageSlug string) ([]model.ReactionCount, error)
 
+	// BatchGetPageReactions returns aggregated reaction counts for multiple pages.
+	BatchGetPageReactions(ctx context.Context, siteID string, slugs []string) (map[string][]model.ReactionCount, error)
+
 	// GetUserPageReactions returns which emojis the given fingerprint has reacted with on a page.
 	GetUserPageReactions(ctx context.Context, siteID, pageSlug, fingerprint string) ([]string, error)
 

@@ -1485,6 +1485,39 @@ func (s *SQLiteStore) GetPageReactions(ctx context.Context, siteID, pageSlug str
 	return result, nil
 }
 
+func (s *SQLiteStore) BatchGetPageReactions(ctx context.Context, siteID string, slugs []string) (map[string][]model.ReactionCount, error) {
+	if len(slugs) == 0 {
+		return map[string][]model.ReactionCount{}, nil
+	}
+
+	placeholders := make([]string, len(slugs))
+	args := make([]interface{}, 0, len(slugs)+1)
+	args = append(args, siteID)
+	for i, slug := range slugs {
+		placeholders[i] = "?"
+		args = append(args, slug)
+	}
+
+	query := `SELECT page_slug, emoji, COUNT(*) FROM page_reactions WHERE site_id = ? AND page_slug IN (` + strings.Join(placeholders, ",") + `) GROUP BY page_slug, emoji ORDER BY page_slug, COUNT(*) DESC`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string][]model.ReactionCount)
+	for rows.Next() {
+		var slug, emoji string
+		var count int
+		if err := rows.Scan(&slug, &emoji, &count); err != nil {
+			return nil, err
+		}
+		result[slug] = append(result[slug], model.ReactionCount{Emoji: emoji, Count: count})
+	}
+	return result, nil
+}
+
 func (s *SQLiteStore) GetUserPageReactions(ctx context.Context, siteID, pageSlug, fingerprint string) ([]string, error) {
 	if fingerprint == "" {
 		return []string{}, nil

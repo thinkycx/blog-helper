@@ -4,6 +4,7 @@
 @keyframes ba-fadein { from { opacity: 0; } to { opacity: 1; } }
 .ba-pv { display: block; font-size: 12px; white-space: nowrap; min-height: 1.4em; opacity: 0; }
 .ba-pv-ready { color: #999; opacity: 1; animation: ba-fadein 0.3s ease; }
+.ba-stats-all { font-size: 10px; color: #999; }
 .ba-stats { color: #586069; font-size: 13px; float: right; white-space: nowrap; line-height: inherit; }
 .ba-stats .ba-separator { margin: 0 4px; color: #d1d5da; }
 .ba-popular ul { list-style: none; padding-left: 0; margin: 0; }

@@ -38,6 +38,7 @@
     features: {
       reportPV: true,
       showListPV: true,
+      showListAll: false,
       showPostStats: true,
       showPopular: true,
       popularLimit: 8,
@@ -367,6 +368,56 @@
     }
   }
 
+  function renderListAll(config, statsMap, reactionsMap) {
+    if (!statsMap) statsMap = {};
+    if (!reactionsMap) reactionsMap = {};
+    var sel = config.selectors;
+    var items = document.querySelectorAll(sel.listItems);
+
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var link = item.querySelector(sel.listItemLink);
+      if (!link || !link.href) continue;
+
+      var slug;
+      try {
+        slug = normalizeSlug(new URL(link.href).pathname);
+      } catch (e) {
+        continue;
+      }
+
+      var stats = statsMap[slug];
+      var reactions = reactionsMap[slug];
+      var uv = stats ? stats.uv : 0;
+      var pv = stats ? stats.pv : 0;
+      var likes = 0;
+      if (reactions && reactions["❤️"]) {
+        likes = reactions["❤️"];
+      }
+
+      // Build display parts (skip zero values)
+      var parts = [];
+      if (uv > 0) parts.push(config.uvLabel + " " + uv);
+      if (pv > 0) parts.push(config.pvLabel + " " + pv);
+      if (likes > 0) parts.push("❤️ " + likes);
+
+      if (parts.length === 0) {
+        var existing = item.querySelector(".ba-pv");
+        if (existing) existing.style.display = "none";
+        continue;
+      }
+
+      var el = item.querySelector(".ba-pv");
+      if (!el) {
+        el = document.createElement("span");
+        el.className = "ba-pv";
+        item.appendChild(el);
+      }
+      el.className = "ba-pv ba-stats-all ba-pv-ready";
+      el.textContent = parts.join(config.separator);
+    }
+  }
+
   function renderPostStats(config, pv, uv) {
     var sel = config.selectors;
     var meta = document.querySelector(sel.postMeta);
@@ -601,6 +652,18 @@
       .then(function (r) { return r.json(); })
       .then(function (d) { return d.ok ? d.data : null; })
       .catch(function () { return null; });
+  }
+
+  function apiPageReactionsBatch(config, slugs) {
+    var base = commentApiBase(config);
+    return fetch(base + "/page/reactions/batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ site_id: config.siteId, slugs: slugs }),
+    }).then(function (r) { return r.json(); })
+      .then(function (d) { return d.ok ? d.data : {}; })
+      .catch(function () { return {}; });
   }
 
   function apiLookupCommenter(config, email) {
@@ -1735,8 +1798,33 @@
       promises.push(reportPromise);
     }
 
-    // List page: insert placeholders first, then batch fetch PV
-    if (pageType === "list" && config.features.showListPV) {
+    // List page: showListAll (UV + PV + likes) takes priority over showListPV
+    if (pageType === "list" && config.features.showListAll) {
+      var items = document.querySelectorAll(config.selectors.listItems);
+      var slugs = [];
+
+      for (var i = 0; i < items.length; i++) {
+        var link = items[i].querySelector(config.selectors.listItemLink);
+        if (link && link.href) {
+          try {
+            slugs.push(normalizeSlug(new URL(link.href).pathname));
+          } catch (e) {
+            continue;
+          }
+        }
+      }
+
+      if (slugs.length > 0) {
+        promises.push(
+          Promise.all([
+            apiBatchStats(config, slugs),
+            apiPageReactionsBatch(config, slugs),
+          ]).then(function (results) {
+            renderListAll(config, results[0], results[1]);
+          })
+        );
+      }
+    } else if (pageType === "list" && config.features.showListPV) {
       var items = document.querySelectorAll(config.selectors.listItems);
       var slugs = [];
 

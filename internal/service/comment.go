@@ -499,6 +499,16 @@ func (s *CommentService) GetPageReactions(ctx context.Context, siteID, pageSlug,
 	}, nil
 }
 
+// BatchGetPageReactions returns aggregated reaction counts for multiple pages.
+func (s *CommentService) BatchGetPageReactions(ctx context.Context, siteID string, slugs []string) (map[string][]model.ReactionCount, error) {
+	siteID = normalizeSiteID(siteID)
+	normalized := make([]string, len(slugs))
+	for i, slug := range slugs {
+		normalized[i] = normalizeSlug(slug)
+	}
+	return s.store.BatchGetPageReactions(ctx, siteID, normalized)
+}
+
 // --- Rate limiting ---
 
 func (s *CommentService) checkRateLimit(ip string) error {

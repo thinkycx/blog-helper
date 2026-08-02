@@ -87,6 +87,7 @@ SITE_DIR=/path/to/your-blog make dev
 | `POST` | `/commenter/profile` | 更新评论者资料 |
 | `POST` | `/page/react` | 文章爱心表态 |
 | `GET` | `/page/reactions?slug=...&site_id=...` | 获取文章表态数 |
+| `POST` | `/page/reactions/batch` | 批量文章表态数（`{"site_id":"...","slugs":[...]}`) |
 
 ### Dashboard 接口（需认证）
 
@@ -146,6 +147,7 @@ window.BlogHelperConfig = {
   features: {
     reportPV: true,
     showListPV: true,
+    showListAll: false,     // 列表页显示 UV + PV + 爱心数（覆盖 showListPV）
     showPostStats: true,
     showPopular: true,
     showComments: "auto",   // true | "auto" | false

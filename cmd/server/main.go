@@ -72,6 +72,7 @@ func main() {
 	// Page reactions (always available — independent of comment mode)
 	mux.HandleFunc("/api/v1/page/react", commentHandler.HandlePageReact)
 	mux.HandleFunc("/api/v1/page/reactions", commentHandler.HandlePageReactions)
+	mux.HandleFunc("/api/v1/page/reactions/batch", commentHandler.HandleBatchPageReactions)
 
 	// Comment routes (only if comment-mode != off)
 	if cfg.CommentMode != "off" {

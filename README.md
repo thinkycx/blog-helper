@@ -87,6 +87,7 @@ Base path: `/api/v1`
 | `POST` | `/commenter/profile` | Update commenter profile |
 | `POST` | `/page/react` | React (heart) to a page |
 | `GET` | `/page/reactions?slug=...&site_id=...` | Get page reaction counts |
+| `POST` | `/page/reactions/batch` | Batch page reactions (`{"site_id":"...","slugs":[...]}`) |
 
 ### Dashboard (auth required)
 
@@ -146,6 +147,7 @@ window.BlogHelperConfig = {
   features: {
     reportPV: true,
     showListPV: true,
+    showListAll: false,     // UV + PV + likes per list item (overrides showListPV)
     showPostStats: true,
     showPopular: true,
     showComments: "auto",   // true | "auto" | false

@@ -180,7 +180,7 @@ func (h *AnalyticsHandler) HandleBatchStats(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: data})
 }
 
-// HandlePopular handles GET /api/v1/analytics/popular?limit=10&period=30d&site_id=...
+// HandlePopular handles GET /api/v1/analytics/popular?limit=10&period=all&site_id=...&prefix=/&exclude=/ai-notes/,/drafts/
 func (h *AnalyticsHandler) HandlePopular(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only GET is allowed")
@@ -196,7 +196,7 @@ func (h *AnalyticsHandler) HandlePopular(w http.ResponseWriter, r *http.Request)
 
 	period := r.URL.Query().Get("period")
 	if period == "" {
-		period = "30d"
+		period = "all"
 	}
 
 	siteID := r.URL.Query().Get("site_id")
@@ -204,7 +204,18 @@ func (h *AnalyticsHandler) HandlePopular(w http.ResponseWriter, r *http.Request)
 		siteID = extractSiteID(r)
 	}
 
-	articles, err := h.svc.GetPopularArticles(r.Context(), siteID, limit, period)
+	prefix := r.URL.Query().Get("prefix")
+
+	var excludes []string
+	if ex := r.URL.Query().Get("exclude"); ex != "" {
+		for _, e := range strings.Split(ex, ",") {
+			if t := strings.TrimSpace(e); t != "" {
+				excludes = append(excludes, t)
+			}
+		}
+	}
+
+	articles, err := h.svc.GetPopularArticles(r.Context(), siteID, limit, period, prefix, excludes)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get popular articles")
 		return

@@ -76,7 +76,7 @@ func (s *AnalyticsService) BatchGetPageStats(ctx context.Context, siteID string,
 }
 
 // GetPopularArticles returns top articles by PV within a site.
-func (s *AnalyticsService) GetPopularArticles(ctx context.Context, siteID string, limit int, period string) ([]*model.PopularArticle, error) {
+func (s *AnalyticsService) GetPopularArticles(ctx context.Context, siteID string, limit int, period string, prefix string, excludes []string) ([]*model.PopularArticle, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 10
 	}
@@ -84,9 +84,9 @@ func (s *AnalyticsService) GetPopularArticles(ctx context.Context, siteID string
 	case "7d", "30d", "all":
 		// valid
 	default:
-		period = "30d"
+		period = "all"
 	}
-	return s.store.GetPopularArticles(ctx, normalizeSiteID(siteID), limit, period)
+	return s.store.GetPopularArticles(ctx, normalizeSiteID(siteID), limit, period, prefix, excludes)
 }
 
 // GetActiveVisitors returns the count of distinct visitors in the last N minutes.

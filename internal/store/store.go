@@ -22,8 +22,8 @@ type Store interface {
 	BatchGetPageStats(ctx context.Context, siteID string, slugs []string) (map[string]*model.PageStats, error)
 
 	// GetPopularArticles returns the top N articles ranked by PV within a time period for a site.
-	// period: "7d", "30d", "all"
-	GetPopularArticles(ctx context.Context, siteID string, limit int, period string) ([]*model.PopularArticle, error)
+	// period: "7d", "30d", "all"; prefix filters to slugs starting with it; excludes removes slugs matching those prefixes.
+	GetPopularArticles(ctx context.Context, siteID string, limit int, period string, prefix string, excludes []string) ([]*model.PopularArticle, error)
 
 	// GetSiteTrend returns site-wide daily PV/UV for the last N days.
 	GetSiteTrend(ctx context.Context, siteID string, days int) ([]*model.SiteDailyStat, error)

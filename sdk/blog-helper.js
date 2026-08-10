@@ -42,7 +42,10 @@
       showPostStats: true,
       showPopular: true,
       popularLimit: 8,
-      popularPeriod: "30d",
+      popularPeriod: "all",
+      popularPrefix: "",
+      popularExclude: "",
+      popularCacheTTL: 3600000,
       showActive: false,
       showTrend: false,
       showReferrers: false,
@@ -255,12 +258,41 @@
     });
   }
 
-  function apiPopular(config, limit, period) {
-    return apiRequest(
+  function apiPopular(config, limit, period, prefix, exclude) {
+    var url = "/popular?limit=" + limit + "&period=" + period + "&site_id=" + encodeURIComponent(config.siteId);
+    if (prefix) url += "&prefix=" + encodeURIComponent(prefix);
+    if (exclude) url += "&exclude=" + encodeURIComponent(exclude);
+    return apiRequest(config, "GET", url);
+  }
+
+  function cachedPopular(config) {
+    var ttl = config.features.popularCacheTTL;
+    var key = "bh_popular_" + config.siteId;
+    if (ttl > 0) {
+      try {
+        var cached = localStorage.getItem(key);
+        if (cached) {
+          var obj = JSON.parse(cached);
+          if (Date.now() - obj.ts < ttl) {
+            return Promise.resolve(obj.data);
+          }
+        }
+      } catch (e) {}
+    }
+    return apiPopular(
       config,
-      "GET",
-      "/popular?limit=" + limit + "&period=" + period + "&site_id=" + encodeURIComponent(config.siteId)
-    );
+      config.features.popularLimit,
+      config.features.popularPeriod,
+      config.features.popularPrefix,
+      config.features.popularExclude
+    ).then(function (articles) {
+      if (ttl > 0) {
+        try {
+          localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data: articles }));
+        } catch (e) {}
+      }
+      return articles;
+    });
   }
 
   function apiActive(config, minutes) {
@@ -1889,11 +1921,7 @@
     // Popular articles for sidebar
     if (config.features.showPopular) {
       promises.push(
-        apiPopular(
-          config,
-          config.features.popularLimit,
-          config.features.popularPeriod
-        ).then(function (articles) {
+        cachedPopular(config).then(function (articles) {
           renderPopular(config, articles);
         })
       );

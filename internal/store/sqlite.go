@@ -348,38 +348,37 @@ func (s *SQLiteStore) BatchGetPageStats(ctx context.Context, siteID string, slug
 }
 
 // GetPopularArticles returns top N articles by PV within a time period for a site.
-func (s *SQLiteStore) GetPopularArticles(ctx context.Context, siteID string, limit int, period string) ([]*model.PopularArticle, error) {
-	var query string
+func (s *SQLiteStore) GetPopularArticles(ctx context.Context, siteID string, limit int, period string, prefix string, excludes []string) ([]*model.PopularArticle, error) {
+	var where string
 	var args []interface{}
 
+	// Build filter clauses
+	filters := "site_id = ?"
+	args = append(args, siteID)
+
+	if prefix != "" {
+		filters += " AND page_slug LIKE ?"
+		args = append(args, prefix+"%")
+	}
+	for _, ex := range excludes {
+		if ex != "" {
+			filters += " AND page_slug NOT LIKE ?"
+			args = append(args, ex+"%")
+		}
+	}
+
+	var query string
 	switch period {
 	case "7d":
-		query = `
-			SELECT page_slug, SUM(pv_count) as total_pv
-			FROM daily_stats
-			WHERE site_id = ? AND date >= date('now', '-7 days')
-			GROUP BY page_slug
-			ORDER BY total_pv DESC
-			LIMIT ?`
-		args = []interface{}{siteID, limit}
+		where = filters + " AND date >= date('now', '-7 days')"
+		query = `SELECT page_slug, SUM(pv_count) as total_pv FROM daily_stats WHERE ` + where + ` GROUP BY page_slug ORDER BY total_pv DESC LIMIT ?`
 	case "30d":
-		query = `
-			SELECT page_slug, SUM(pv_count) as total_pv
-			FROM daily_stats
-			WHERE site_id = ? AND date >= date('now', '-30 days')
-			GROUP BY page_slug
-			ORDER BY total_pv DESC
-			LIMIT ?`
-		args = []interface{}{siteID, limit}
+		where = filters + " AND date >= date('now', '-30 days')"
+		query = `SELECT page_slug, SUM(pv_count) as total_pv FROM daily_stats WHERE ` + where + ` GROUP BY page_slug ORDER BY total_pv DESC LIMIT ?`
 	default: // "all"
-		query = `
-			SELECT page_slug, pv_count as total_pv
-			FROM page_stats
-			WHERE site_id = ?
-			ORDER BY pv_count DESC
-			LIMIT ?`
-		args = []interface{}{siteID, limit}
+		query = `SELECT page_slug, pv_count as total_pv FROM page_stats WHERE ` + filters + ` ORDER BY pv_count DESC LIMIT ?`
 	}
+	args = append(args, limit)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {

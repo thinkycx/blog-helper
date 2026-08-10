@@ -17,7 +17,7 @@ Lightweight analytics and comment system for static blogs — PV/UV tracking, po
 
 - **Page View Tracking** — PV + UV per page, browser fingerprint dedup
 - **Batch Stats** — fetch counts for an article list in one request
-- **Popular Articles** — ranked by PV, configurable period (7d / 30d / all)
+- **Popular Articles** — ranked by PV, configurable period (7d / 30d / all), prefix include/exclude filtering
 - **Analytics Dashboard** — password-protected, with trend charts, referrers, visitors, raw access logs, and comment management
 - **Multi-Site** — one instance, N sites, data isolated by `site_id` (auto-detected from hostname)
 - **Comment System** — email-based identity, Markdown support, emoji reactions, cookie token persistence
@@ -69,7 +69,7 @@ Base path: `/api/v1`
 | `POST` | `/analytics/report` | Report a page view, returns updated PV/UV |
 | `GET` | `/analytics/stats?slug=...&site_id=...` | Stats for a single page |
 | `POST` | `/analytics/stats/batch` | Batch stats (`{"site_id":"...","slugs":[...]}`) |
-| `GET` | `/analytics/popular?limit=10&period=30d&site_id=...` | Popular articles ranking |
+| `GET` | `/analytics/popular?limit=10&period=all&site_id=...&prefix=/&exclude=/ai-notes/` | Popular articles ranking |
 
 ### Comments & Reactions (public)
 
@@ -152,7 +152,10 @@ window.BlogHelperConfig = {
     showPopular: true,
     showComments: "auto",   // true | "auto" | false
     popularLimit: 8,
-    popularPeriod: "30d"    // "7d", "30d", "all"
+    popularPeriod: "all",   // "7d", "30d", "all"
+    popularPrefix: "",      // only show slugs with this prefix
+    popularExclude: "",     // comma-separated prefixes to exclude
+    popularCacheTTL: 3600000  // localStorage cache TTL (ms), 0=disable
   },
   pvLabel: "Views",
   uvLabel: "Visitors",

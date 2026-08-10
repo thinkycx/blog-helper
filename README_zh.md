@@ -17,7 +17,7 @@
 
 - **浏览量统计** — 每页 PV + UV，浏览器指纹去重
 - **批量查询** — 文章列表页一次请求获取所有计数
-- **热门文章** — 按 PV 排行，支持 7d / 30d / 全部
+- **热门文章** — 按 PV 排行，支持 7d / 30d / 全部，支持前缀包含/排除过滤
 - **分析面板** — 密码保护的 Dashboard，含趋势图、来源、访客、原始访问记录、评论管理
 - **多站点** — 一个实例，N 个站点，`site_id` 自动从域名提取，数据完全隔离
 - **评论系统** — 邮箱身份认证，Markdown 支持，Emoji 表情回应，Cookie Token 持久化
@@ -69,7 +69,7 @@ SITE_DIR=/path/to/your-blog make dev
 | `POST` | `/analytics/report` | 上报浏览，返回最新 PV/UV |
 | `GET` | `/analytics/stats?slug=...&site_id=...` | 单页统计 |
 | `POST` | `/analytics/stats/batch` | 批量查询（`{"site_id":"...","slugs":[...]}`) |
-| `GET` | `/analytics/popular?limit=10&period=30d&site_id=...` | 热门文章排行 |
+| `GET` | `/analytics/popular?limit=10&period=all&site_id=...&prefix=/&exclude=/ai-notes/` | 热门文章排行 |
 
 ### 评论 & 表态（公开）
 
@@ -152,7 +152,10 @@ window.BlogHelperConfig = {
     showPopular: true,
     showComments: "auto",   // true | "auto" | false
     popularLimit: 8,
-    popularPeriod: "30d"    // "7d", "30d", "all"
+    popularPeriod: "all",   // "7d", "30d", "all"
+    popularPrefix: "",      // 只展示匹配此前缀的 slug
+    popularExclude: "",     // 逗号分隔的排除前缀
+    popularCacheTTL: 3600000  // localStorage 缓存 TTL（毫秒），0=不缓存
   },
   pvLabel: "阅读",
   uvLabel: "访客",

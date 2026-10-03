@@ -88,6 +88,7 @@ window.BlogHelperConfig = {
     showPopular: true,
     showComments: "auto",   // true | "auto" | false
     showInlineComments: true, // text-anchored comments + share cards on selections
+    shareAvatar: "",          // QR-center avatar path; empty = auto-probe /asset/img/avator.{png,jpg}
     popularLimit: 8,
     popularPeriod: "all",   // "7d", "30d", "all"
     popularPrefix: "",      // only show slugs with this prefix
@@ -153,8 +154,14 @@ content-addressed anchor (W3C-Web-Annotation-style TextQuoteSelector):
 
 ### Share Cards
 
+Copy and share work **independently of the comment section** — pages using another comment
+system (e.g. giscus) still get the selection menu with copy/share (no comment action); deep
+links keep working there too.
+
 The share action renders a canvas quote card: quote (paragraph-aware, grows into a long image) + post title + QR code
-of the deep link + centered `@{hostname}` footer. Style/font/background options are chosen at render time and persisted
+of the deep link + centered `@{hostname}` footer, with the site avatar rendered in the QR center
+(error-correction level H keeps it scannable; avatar path auto-probes `/asset/img/avator.png` then `.jpg`,
+or set `features.shareAvatar`). Style/font/background options are chosen at render time and persisted
 in `localStorage`. Fonts that the current device cannot render are hidden from the options instead of silently
 falling back.
 

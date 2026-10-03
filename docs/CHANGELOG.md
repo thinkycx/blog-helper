@@ -5,6 +5,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- QR center avatar on share cards (error-correction level H, ~22% size with white ring —
+  same approach as WeChat/Alipay QR logos; scannability unaffected). Avatar path
+  auto-probes `/asset/img/avator.png` then `.jpg`, overridable via `features.shareAvatar`
+
+### Changed
+- Inline comments are now independent of the comment section: pages using another comment
+  system (e.g. giscus) get the selection menu with copy/share only (no comment action);
+  deep links still work there
+
 ## [v20261003] — 2026-10-03
 
 ### Added

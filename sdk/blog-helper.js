@@ -55,6 +55,7 @@
       referrersLimit: 10,
       showComments: "auto",
       showInlineComments: true, // text-anchored inline comments (select text → comment → highlight)
+      shareAvatar: "",          // QR-center avatar path; empty = auto-probe /asset/img/avator.{png,jpg}
     },
     pvLabel: "阅读",
     uvLabel: "观众",
@@ -2032,6 +2033,44 @@
   var _qrLoading = false;
   var _qrCallbacks = [];
 
+  // Share-card avatar in the QR center: probes candidate paths, caches the
+  // first that loads; null when the site has none (QR renders without logo).
+  var _shareAvatarState = "loading"; // "loading" | "ok" | "fail"
+  var _shareAvatarImg = null;
+  var _shareAvatarCallbacks = [];
+  var SHARE_AVATAR_CANDIDATES = ["/asset/img/avator.png", "/asset/img/avator.jpg"];
+
+  function loadShareAvatar(config, cb) {
+    if (_shareAvatarState === "ok") return cb(_shareAvatarImg);
+    if (_shareAvatarState === "fail") return cb(null);
+    _shareAvatarCallbacks.push(cb);
+    if (_shareAvatarImg) return; // already loading
+    var candidates = (config && config.shareAvatar) ? [config.shareAvatar] : SHARE_AVATAR_CANDIDATES.slice();
+    var idx = 0;
+    function tryNext() {
+      if (idx >= candidates.length) {
+        _shareAvatarState = "fail";
+        _shareAvatarImg = null;
+        for (var j = 0; j < _shareAvatarCallbacks.length; j++) _shareAvatarCallbacks[j](null);
+        _shareAvatarCallbacks = [];
+        return;
+      }
+      var img = new Image();
+      _shareAvatarImg = img;
+      img.onload = function () {
+        _shareAvatarState = "ok";
+        for (var i = 0; i < _shareAvatarCallbacks.length; i++) _shareAvatarCallbacks[i](img);
+        _shareAvatarCallbacks = [];
+      };
+      img.onerror = function () {
+        idx++;
+        tryNext();
+      };
+      img.src = candidates[idx];
+    }
+    tryNext();
+  }
+
   function loadQrcode(cb) {
     if (_qrReady && window.qrcode) { cb(); return; }
     _qrCallbacks.push(cb);
@@ -2084,8 +2123,10 @@
     return lines;
   }
 
-  function drawQrcode(ctx, url, x, y, size) {
-    var qr = window.qrcode(0, "M");
+  function drawQrcode(ctx, url, x, y, size, avatar) {
+    // Error correction H (30%) so a center avatar (~22% of the size, same
+    // approach as WeChat/Alipay QR logos) does not affect scannability.
+    var qr = window.qrcode(0, "H");
     qr.addData(url);
     qr.make();
     var count = qr.getModuleCount();
@@ -2100,6 +2141,22 @@
           ctx.fillRect(x + (c + 1) * cell, y + (r + 1) * cell, Math.ceil(cell), Math.ceil(cell));
         }
       }
+    }
+    if (avatar && avatar.width) {
+      var a = size * 0.22;
+      var cx = x + size / 2, cy = y + size / 2;
+      // white ring around the avatar
+      ctx.beginPath();
+      ctx.arc(cx, cy, a / 2 + 5, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff";
+      ctx.fill();
+      // circular-clipped avatar
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, a / 2, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(avatar, cx - a / 2, cy - a / 2, a, a);
+      ctx.restore();
     }
   }
 
@@ -2419,7 +2476,7 @@
       roundRectPath(ctx, W - PAD - qrSize - 12, qrY - 12, qrSize + 24, qrSize + 24, 10);
       ctx.fill();
     }
-    drawQrcode(ctx, link, W - PAD - qrSize, qrY, qrSize);
+    drawQrcode(ctx, link, W - PAD - qrSize, qrY, qrSize, opts.avatar || null);
 
     ctx.font = "28px " + font.family;
     ctx.fillStyle = bgp.text;
@@ -2437,7 +2494,8 @@
     return canvas;
   }
 
-  function openSharePanel(section, anchor, pos) {
+  function openSharePanel(section, anchor, pos, config) {
+    config = config || (_inlineHost && _inlineHost._bhConfig) || window.BlogHelperConfig || {};
     var existing = document.querySelector(".bh-share-panel");
     if (existing) existing.remove();
 
@@ -2543,7 +2601,10 @@
     });
 
     loadQrcode(function () {
-      renderCard();
+      loadShareAvatar(config, function (avatarImg) {
+        opts.avatar = avatarImg;
+        renderCard();
+      });
 
       // copy image to clipboard
       var copyImgBtn = panel.querySelector(".bh-share-copy-img");
@@ -2825,7 +2886,7 @@
     });
     pop.querySelector(".bh-anchor-share").addEventListener("click", function () {
       closeAnchorPopover(section);
-      openSharePanel(section, anchor, pos);
+      openSharePanel(section, anchor, pos, config);
     });
     refreshComments();
     position();
@@ -2930,12 +2991,21 @@
     var bubble = document.createElement("div");
     bubble.className = "bh-select-bubble";
     bubble.innerHTML =
-      '<button type="button" data-act="comment" title="评论这段">评论</button>' +
+      '<button type="button" data-act="comment" title="评论这段" style="display:none">评论</button>' +
       '<button type="button" data-act="copy" title="复制引用和链接">复制</button>' +
       '<button type="button" data-act="share" title="生成分享卡片">转发</button>';
     bubble.style.display = "none";
     document.body.appendChild(bubble);
     section._bhBubble = bubble;
+
+    // The comment action only appears once the comment section is live
+    // (host._bhFormEl is set by renderCommentSection). Copy/share always work.
+    function syncCommentAction() {
+      var btn = bubble.querySelector('button[data-act="comment"]');
+      if (!btn) return;
+      var can = !!(section._bhFormEl || (_inlineHost && _inlineHost._bhFormEl));
+      btn.style.display = can ? "" : "none";
+    }
 
     var pending = null; // {range, anchor}
 
@@ -2962,6 +3032,7 @@
         pending = { range: range, anchor: buildAnchor(range, container) };
         if (!pending.anchor) return hide();
         // Follow the mouse position (where the user finished the selection)
+        syncCommentAction();
         bubble.style.display = "";
         var bw = bubble.offsetWidth, bh = bubble.offsetHeight;
         var left = Math.max(8, Math.min(mx - bw / 2, window.innerWidth - bw - 8));
@@ -2979,6 +3050,7 @@
       var act = btn.getAttribute("data-act");
       var pos = resolveAnchor(pending.anchor, container);
       if (act === "comment") {
+        if (!(section._bhFormEl || (_inlineHost && _inlineHost._bhFormEl))) return;
         var info = { anchor: pending.anchor };
         if (pos) info.pos = pos;
         hide();
@@ -2995,7 +3067,7 @@
         hide();
         var sel3 = window.getSelection();
         if (sel3) sel3.removeAllRanges();
-        openSharePanel(section, anchor, pos);
+        openSharePanel(section, anchor, pos, config);
       }
     });
 
@@ -3004,6 +3076,13 @@
       if (!sel || sel.isCollapsed) hide();
     });
   }
+
+  // Module-level inline-comments host. The comment section element is the
+  // host when comments are enabled; otherwise a detached div acts as the host
+  // so copy/share still work on pages without blog-helper comments (e.g.
+  // pages using giscus for comments).
+  var _inlineHost = null;
+  var _inlineInited = false;
 
   function initInlineComments(section, state, config, slug) {
     if (config.features.showInlineComments === false) return;
@@ -3019,36 +3098,63 @@
                     container.querySelector("article") ||
                     container;
 
-    section._bhInline = { container: container, content: contentEl };
-    section._bhState = state;
-    section._bhConfig = config;
-    section._bhSlug = slug;
-    section._bhRefreshInline = function () { renderInlineHighlights(section, state); };
+    if (!_inlineInited) {
+      _inlineInited = true;
+      _inlineHost = section || document.createElement("div"); // detached host when no comments
+      _inlineHost._bhInline = { container: container, content: contentEl };
+      _inlineHost._bhRefreshInline = function () {
+        renderInlineHighlights(_inlineHost, _inlineHost._bhState || { comments: [] });
+      };
 
-    // Clicking a highlight opens the popover (bind once per container)
-    if (!container._bhHlBound) {
-      container._bhHlBound = true;
-      container.addEventListener("click", function (e) {
-        var hl = e.target && e.target.closest ? e.target.closest("span.bh-hl") : null;
-        if (!hl) return;
-        var sel = window.getSelection();
-        if (sel && !sel.isCollapsed) return; // user is selecting text
-        e.preventDefault();
-        e.stopPropagation();
-        var sec = this._bhSection;
-        if (sec) openAnchorPopoverByMark(hl, sec, sec._bhState, sec._bhConfig, sec._bhSlug);
-      });
+      // Clicking a highlight opens the popover (only comment-backed highlights
+      // carry data-cids, so this never fires on comment-less pages)
+      if (!container._bhHlBound) {
+        container._bhHlBound = true;
+        container.addEventListener("click", function (e) {
+          var hl = e.target && e.target.closest ? e.target.closest("span.bh-hl") : null;
+          if (!hl) return;
+          var sel = window.getSelection();
+          if (sel && !sel.isCollapsed) return; // user is selecting text
+          e.preventDefault();
+          e.stopPropagation();
+          var host = _inlineHost;
+          if (host && host._bhFormEl) {
+            openAnchorPopoverByMark(hl, host, host._bhState, host._bhConfig, host._bhSlug);
+          }
+        });
+      }
+
+      initSelectionBubble(_inlineHost, state, config, slug, contentEl);
+
+      // Deep-link fallback: try positioning once after init (also re-run
+      // after comment loads and on every highlight refresh).
+      setTimeout(function () { handleDeepLink(_inlineHost); }, 600);
     }
-    container._bhSection = section;
-    container._bhState = state;
-    container._bhConfig = config;
-    container._bhSlug = slug;
 
-    initSelectionBubble(section, state, config, slug, contentEl);
+    // (Re-)register the comment section when it comes up — this is what
+    // enables the "评论" action in the selection menu.
+    if (section && _inlineHost !== section) {
+      // migrate module state from the detached host onto the real section
+      var prev = _inlineHost;
+      section._bhInline = prev._bhInline || { container: container, content: contentEl };
+      section._bhRefreshInline = prev._bhRefreshInline;
+      section._bhBubble = prev._bhBubble;
+      section._bhDeepLinked = prev._bhDeepLinked;
+      section._bhPop = prev._bhPop;
+      section._bhPendingMarks = prev._bhPendingMarks;
+      _inlineHost = section;
+    }
+    _inlineHost._bhState = state || _inlineHost._bhState || { comments: [] };
+    _inlineHost._bhConfig = config;
+    _inlineHost._bhSlug = slug;
+    container._bhSection = _inlineHost;
+  }
 
-    // Deep-link fallback: pages with zero comments never re-render highlights,
-    // so try positioning once after init (also covered after comment loads).
-    setTimeout(function () { handleDeepLink(section); }, 600);
+  // Inline comments are independent of the comment section: pages without
+  // blog-helper comments still get the selection menu (copy / share) and
+  // deep links.
+  function initInlineCommentsStandalone(config, slug) {
+    initInlineComments(null, null, config, slug);
   }
 
   // ============================================================
@@ -3249,6 +3355,11 @@
     // Page reactions (always available on post pages, independent of comment mode)
     if (pageType === "post") {
       var commentSlug = getCurrentSlug();
+      // Inline comments run independently of the comment section: pages
+      // without blog-helper comments (e.g. giscus) still get copy/share.
+      if (config.features.showInlineComments !== false) {
+        initInlineCommentsStandalone(config, commentSlug);
+      }
       promises.push(Promise.resolve().then(function () {
         renderPageReactions(config, commentSlug);
       }));

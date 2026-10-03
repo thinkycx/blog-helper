@@ -88,6 +88,7 @@ window.BlogHelperConfig = {
     showPopular: true,
     showComments: "auto",   // true | "auto" | false
     showInlineComments: true, // 正文关联评论 + 选中分享卡片
+    shareAvatar: "",          // 二维码中心头像路径；空 = 自动探测 /asset/img/avator.{png,jpg}
     popularLimit: 8,
     popularPeriod: "all",   // "7d", "30d", "all"
     popularPrefix: "",      // 只展示匹配此前缀的 slug
@@ -154,9 +155,14 @@ window.BlogHelperConfig = {
 
 ### 分享卡片（Share Cards）
 
+**复制和转发不依赖评论功能** —— 使用其他评论系统（如 giscus）的页面同样有选中菜单（仅复制/转发，
+无评论按钮），深链也正常工作。
+
 转发动作用 canvas 生成引用卡片：引用文字（按段落区分，长文自动变长图）+ 文章标题 + 二维码（深链，扫码
-定位到原文位置）+ 底部居中 `@{域名}`。风格/字体/背景在渲染时切换并持久化到 `localStorage`；当前设备
-不支持的字体直接隐藏选项（不做静默回退）。竹简风为传统竖排（右上起笔、从右往左）。
+定位到原文位置）+ 底部居中 `@{域名}`，二维码中心嵌入站点头像（H 级纠错保证可扫；头像路径自动探测
+`/asset/img/avator.png` → `.jpg`，也可用 `features.shareAvatar` 指定）。风格/字体/背景在渲染时切换并
+持久化到 `localStorage`；当前设备不支持的字体直接隐藏选项（不做静默回退）。竹简风为传统竖排（右上
+起笔、从右往左）。
 
 **防机器人**：Proof-of-Work（SHA-256 前缀挑战）、频率限制（5 条/IP/分钟）、蜜罐字段。
 

@@ -2492,10 +2492,14 @@
     ctx.fillStyle = bgp.sub;
     ctx.fillText("长按识别二维码 · 定位到文章原位置", PAD, qrY + 92);
 
-    // centered @host footer (from the current site, never hardcoded)
+    // centered "@host · share-time" footer (from the current site, never hardcoded)
     ctx.font = "24px " + font.family;
     ctx.fillStyle = bgp.sub;
-    var host = "@" + window.location.hostname;
+    var _p2 = function (n) { return n < 10 ? "0" + n : "" + n; };
+    var _now = new Date();
+    var host = "@" + window.location.hostname + " · " +
+      _now.getFullYear() + "-" + _p2(_now.getMonth() + 1) + "-" + _p2(_now.getDate()) +
+      " " + _p2(_now.getHours()) + ":" + _p2(_now.getMinutes());
     ctx.fillText(host, (W - ctx.measureText(host).width) / 2, qrY + qrSize + 26);
 
     return canvas;

@@ -3062,14 +3062,18 @@
       if (!btn || !pending) return;
       var act = btn.getAttribute("data-act");
       var pos = resolveAnchor(pending.anchor, container);
+      // Always act on the CURRENT host: the comment section registers itself
+      // onto _inlineHost after this bubble was created (initially a detached
+      // host with a null state), so the closed-over section/state are stale.
+      var host = _inlineHost || section;
       if (act === "comment") {
-        if (!(section._bhFormEl || (_inlineHost && _inlineHost._bhFormEl))) return;
+        if (!host._bhFormEl) return;
         var info = { anchor: pending.anchor };
         if (pos) info.pos = pos;
         hide();
         var sel = window.getSelection();
         if (sel) sel.removeAllRanges();
-        openAnchorPopover(section, state, config, slug, info);
+        openAnchorPopover(host, host._bhState, host._bhConfig, host._bhSlug, info);
       } else if (act === "copy") {
         copyPassage(pending.anchor, pos);
         hide();
@@ -3080,7 +3084,7 @@
         hide();
         var sel3 = window.getSelection();
         if (sel3) sel3.removeAllRanges();
-        openSharePanel(section, anchor, pos, config);
+        openSharePanel(host, anchor, pos, host._bhConfig || config);
       }
     }
 

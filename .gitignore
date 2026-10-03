@@ -5,8 +5,10 @@ dist/
 # Data
 data/
 
-# Docs (keep local only)
-docs/
+# Docs (local only) — API reference and CHANGELOG are tracked (linked from README)
+docs/*
+!docs/API.md
+!docs/CHANGELOG.md
 
 # Claude Code
 .claude/

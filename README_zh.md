@@ -62,78 +62,7 @@ SITE_DIR=/path/to/your-blog make dev
 
 ## API
 
-基础路径：`/api/v1`
-
-### 公开接口（SDK 调用）
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `POST` | `/analytics/report` | 上报浏览，返回最新 PV/UV |
-| `GET` | `/analytics/stats?slug=...&site_id=...` | 单页统计 |
-| `POST` | `/analytics/stats/batch` | 批量查询（`{"site_id":"...","slugs":[...]}`) |
-| `GET` | `/analytics/popular?limit=10&period=all&site_id=...&prefix=/&exclude=/ai-notes/` | 热门文章排行 |
-
-### 评论 & 表态（公开）
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `GET` | `/comments/config?site_id=...` | 查询站点评论模式 |
-| `GET` | `/comments?slug=...&site_id=...` | 获取页面评论 |
-| `POST` | `/comments/post` | 发表评论（需 PoW） |
-| `POST` | `/comments/count` | 批量评论数 |
-| `GET` | `/comments/challenge?site_id=...` | 获取 PoW 挑战 |
-| `POST` | `/comments/react` | 评论 Emoji 回应 |
-| `GET` | `/comments/recent?site_id=...&limit=5` | 最近评论（侧边栏） |
-| `GET` | `/comments/hot?site_id=...&limit=5` | 热门评论（按回应数） |
-| `GET` | `/commenter/lookup?token=...` | 按 Token 查询评论者 |
-| `POST` | `/commenter/profile` | 更新评论者资料 |
-| `POST` | `/page/react` | 文章爱心表态 |
-| `GET` | `/page/reactions?slug=...&site_id=...` | 获取文章表态数 |
-| `POST` | `/page/reactions/batch` | 批量文章表态数（`{"site_id":"...","slugs":[...]}`) |
-
-### Dashboard 接口（需认证）
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `GET` | `/analytics/trend?days=30&site_id=...` | PV/UV 趋势（可选 `&slug=` 筛选） |
-| `GET` | `/analytics/referrers?days=30&site_id=...` | 来源域名排行 |
-| `GET` | `/analytics/visitors?site_id=...` | 最近独立访客 |
-| `GET` | `/analytics/views?site_id=...&limit=50` | 原始访问记录 |
-| `GET` | `/analytics/summary?period=30d&site_id=...` | 时间段 PV/UV 汇总 |
-| `GET` | `/comments/pending?site_id=...` | 待审评论（审核模式） |
-| `POST` | `/comments/approve?id=...` | 通过评论 |
-| `POST` | `/comments/reject?id=...` | 驳回评论 |
-| `POST` | `/comments/delete?id=...` | 删除评论 |
-| `GET` | `/comments/all?site_id=&limit=&offset=` | 全部评论（分页） |
-| `POST` | `/comments/admin-reply` | 管理员以"作者"身份回复 |
-| `GET` | `/comments/mode` | 获取当前评论模式 |
-| `POST` | `/comments/mode` | 运行时切换评论模式 |
-| `GET` | `/commenters/all?limit=&offset=` | 评论用户列表（分页） |
-| `GET` | `/dashboard` | 分析 + 评论管理面板 |
-| `GET` | `/health` | 健康检查 |
-
-### 示例
-
-```bash
-# 上报浏览量
-curl -X POST http://localhost:9001/api/v1/analytics/report \
-  -H "Content-Type: application/json" \
-  -d '{"page_slug":"/2024/01/hello","page_title":"Hello World","fingerprint":"abc123"}'
-# → {"ok":true,"data":{"pv":42,"uv":18}}
-
-# 批量查询
-curl -X POST http://localhost:9001/api/v1/analytics/stats/batch \
-  -H "Content-Type: application/json" \
-  -d '{"site_id":"your-site.com","slugs":["/post-a","/post-b"]}'
-# → {"ok":true,"data":{"/post-a":{"pv":100,"uv":50},"/post-b":{"pv":200,"uv":80}}}
-
-# 发表正文关联评论 — anchor 为 JSON 字符串，可选
-curl -X POST http://localhost:9001/api/v1/comments/post \
-  -H "Content-Type: application/json" \
-  -d '{"page_slug":"/2024/01/hello","email":"a@b.com","nickname":"Alice","content":"这段写得很好","anchor":"{\"exact\":\"很好的一句话\",\"prefix\":\"...\",\"suffix\":\"...\",\"start\":10,\"end\":18}"}'
-```
-
-错误格式：`{"ok":false,"error":{"code":"RATE_LIMITED","message":"Too many requests"}}`
+完整 API 参考：[docs/API.md](docs/API.md) — 统计、评论与表态、Dashboard 接口、请求/响应示例，以及正文关联评论的锚点（anchor）格式说明。
 
 ## SDK
 

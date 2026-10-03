@@ -1,84 +1,71 @@
-# Changelog
+# 更新日志
 
-All notable changes to this project are documented in this file.
-The format is based on [Keep a Changelog](https://keepachangelog.com/).
+本文件记录项目所有重要变更。格式参考 [Keep a Changelog](https://keepachangelog.com/)。
 
-## [Unreleased]
+## [未发布]
 
-### Added
-- Share timestamp on cards: local time with timezone offset, bottom-right
-  (does not affect the centered @host footer)
-- Uniform 3:4 baseline aspect ratio for share cards: short quotes render as a
-  standard 1080x1440 card (content top, footer pinned to bottom); long
-  passages still grow into long images
+### 新增
+- 分享卡片右下角增加分享时间戳：本地时间精确到秒 + 时区偏移（如 `UTC+8`），不影响居中的 `@域名`
+- 分享卡片统一 3:4 基准比例：短引用渲染为标准 1080×1440 卡片（内容在顶、底块钉底）；长引用仍自然生长为长图
+- 分享卡片二维码中心嵌入站点头像：H 级纠错 + 约 22% 尺寸圆形头像带白环（微信/支付宝二维码 logo 同款方案，不影响扫码）；
+  头像路径自动探测 `/asset/img/avator.png` → `.jpg`，可通过 `features.shareAvatar` 指定
 
-### Changed
-- Default share options: font 宋体 (serif) first; option order — styles
-  默认/宁静风/引用风/日历风/竹简风, backgrounds 白/夜/米/灰/绿
-- Fix stale `classic` fallback theme key in `loadShareOpts` (first open showed
-  no active style chip)
+### 变更
+- 分享选项默认值与排序：字体默认宋体（旧存储的 sans 默认值自动迁移）；主题排序
+  默认/宁静风/引用风/日历风/竹简风，背景排序 白/夜/米/灰/绿
+- 复制/转发与评论功能解耦：使用其他评论系统（如 giscus）的页面同样有选中菜单（仅复制/转发，无评论按钮），深链照常可用
 
-### Added
-- QR center avatar on share cards (error-correction level H, ~22% size with white ring —
-  same approach as WeChat/Alipay QR logos; scannability unaffected). Avatar path
-  auto-probes `/asset/img/avator.png` then `.jpg`, overridable via `features.shareAvatar`
-
-### Changed
-- Inline comments are now independent of the comment section: pages using another comment
-  system (e.g. giscus) get the selection menu with copy/share only (no comment action);
-  deep links still work there
+### 修复
+- `loadShareOpts` 的 fallback 主题键残留已废弃的 `classic`（首次打开无风格 chip 高亮）
+- 分享卡片加载提示居中展示
 
 ## [v20261003] — 2026-10-03
 
-### Added
-- **Inline comments (text-anchored)**: select any passage to comment on it.
-  - `comments.anchor` column (JSON TextQuoteSelector-style: `exact`/`prefix`/`suffix`/`start`/`end`), backward-compatible migration, empty = whole-page comment
-  - Content-addressed resolution: position verify → prefix+exact+suffix search → exact search; degrades to quote-only when the passage no longer exists
-  - Layout-safe per-text-node highlight painting, overlapping passages merged, dashed pending underline while composing
-  - Selection menu (comment / copy / share) following the mouse position
-  - Anchor popover below the passage, auto-opens the form for passages without comments, Esc/outside-click close
-  - Deep links `#bh-{start}-{end}` scroll + flash to the exact passage, auto-expanding collapsed `<details>`
-- **Share cards**: canvas quote card with QR deep link and centered `@{hostname}` footer.
-  - Paragraph-aware long-image rendering (up to 80 lines)
-  - 5 styles: plain / quote / calendar / serene (deep-ocean banner) / bamboo (traditional vertical, right-to-left)
-  - 5 CJK fonts with availability probing — fonts the device cannot render are hidden instead of silently falling back
-  - 5 background colors; copy image / copy link / download / native share (`navigator.share`)
-  - Render options persisted in `localStorage`
-- Vendored `qrcode-generator` 1.4.4 (MIT) as `sdk/lib/qrcode.min.js`, lazy-loaded like marked.js
+### 新增
+- **正文关联评论（Inline Comments）**：选中任意段落即可针对性评论
+  - `comments.anchor` 列（JSON，TextQuoteSelector 风格：`exact`/`prefix`/`suffix`/`start`/`end`），向后兼容迁移，空 = 整页评论
+  - 内容寻址恢复：位置校验 → 前缀+原文+后缀搜索 → 纯原文搜索；段落不存在时优雅降级为仅引用展示
+  - 高亮按文本节点分段绘制（任意选区不破坏排版），重叠段落合并，落笔时虚线待定下划线
+  - 选中菜单（评论/复制/转发）跟随鼠标位置
+  - 锚点弹窗默认在段落下方，无评论段落直接弹出表单，Esc/外点关闭
+  - 深链 `#bh-{start}-{end}` 滚动定位到原文段落并闪烁，自动展开折叠的 `<details>`
+- **分享卡片（Share Cards）**：canvas 引用卡片 + 二维码深链 + 底部居中 `@域名`
+  - 按段落区分的长图渲染（上限 80 行）
+  - 5 种风格：默认 / 引用风 / 日历风 / 宁静风（深海横幅）/ 竹简风（传统竖排，右上起笔、从右往左）
+  - 5 种中文字体，可用性探测——设备不支持的字体直接隐藏，不做静默回退
+  - 5 种背景色；复制图片 / 复制链接 / 保存图片 / 系统分享（`navigator.share`）
+  - 渲染选项持久化到 `localStorage`
+- 内置 `qrcode-generator` 1.4.4（MIT）为 `sdk/lib/qrcode.min.js`，与 marked.js 同模式本地化懒加载
 
-### Fixed
-- Comment section no longer escapes the page column when `postContainer` resolves to a top-level
-  wrapper (e.g. md2site `.container`) — the section is now appended inside the container
+### 修复
+- `postContainer` 解析为顶层容器（如 md2site `.container`）时评论区撑破页面宽度——改为插入容器内部
 
 ## [v20260810] — 2026-08-10
 
-### Added
-- Popular API `prefix` / `exclude` filtering and localStorage cache (`popularCacheTTL`)
-- `showListAll` feature: batch page reactions API + list stats (UV / PV / likes per item)
+### 新增
+- 热门文章 API `prefix` / `exclude` 前缀过滤 + localStorage 缓存（`popularCacheTTL`）
+- `showListAll` 功能：批量文章表态 API + 列表页统计（每篇 UV / PV / 爱心数）
 
 ## [v20260420] — 2026-04-20
 
-### Added
-- Comment management dashboard: All / Pending / Commenters tabs, admin reply (Markdown), runtime comment-mode switch
-- Commenter identity fixes, engagement stats on dashboard
+### 新增
+- 评论管理面板：全部/待审/评论者三个子页、作者回复（Markdown）、运行时评论模式切换
+- 评论者身份识别修复、面板互动统计
 
 ## [v20260418] — 2026-04-18
 
-### Added
-- Comment system: email-based identity with cookie token, threaded replies, Markdown
-  (write/preview), emoji reactions on comments and pages, profile editing
-- Per-site comment control via SDK `showComments` (`true` / `"auto"` / `false`)
-- Anti-abuse: Proof-of-Work challenge, 5 comments/IP/minute rate limit, honeypot field
+### 新增
+- 评论系统：邮箱身份 + Cookie Token、嵌套回复、Markdown（编写/预览）、评论与文章 Emoji 表态、个人资料编辑
+- 站点级评论控制：SDK `showComments`（`true` / `"auto"` / `false`）
+- 防滥用：Proof-of-Work 挑战、5 条/IP/分钟频率限制、蜜罐字段
 
 ## [v20260412] — 2026-04-12
 
-### Added
-- Analytics dashboard (password-protected): trend charts with time ranges, referrers,
-  visitors, platforms, raw access logs, article drill-down
-- Sub-daily trends, version display, dashboard refresh stabilization
+### 新增
+- 分析面板（密码保护）：多时间范围趋势图、来源域名、访客、平台、原始访问记录、文章下钻
+- 亚天级趋势、版本显示、面板刷新稳定化
 
 ## [v20260406] — 2026-04-06
 
-### Added
-- Initial release: PV/UV tracking with fingerprint dedup, batch stats, popular articles,
-  multi-site support (`site_id` isolated by hostname), zero-config SDK
+### 新增
+- 初始发布：PV/UV 统计（指纹去重）、批量查询、热门文章、多站点（`site_id` 按域名隔离）、零配置 SDK

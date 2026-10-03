@@ -159,7 +159,9 @@ system (e.g. giscus) still get the selection menu with copy/share (no comment ac
 links keep working there too.
 
 The share action renders a canvas quote card: quote (paragraph-aware, grows into a long image) + post title + QR code
-of the deep link + centered `@{hostname}` footer, with the site avatar rendered in the QR center
+of the deep link + centered `@{hostname}` footer + a bottom-right share timestamp (local time to the
+second, with timezone offset). Short quotes render as a uniform 3:4 card (1080x1440, footer pinned to
+the bottom); longer passages grow into a long image. The site avatar is rendered in the QR center
 (error-correction level H keeps it scannable; avatar path auto-probes `/asset/img/avator.png` then `.jpg`,
 or set `features.shareAvatar`). Style/font/background options are chosen at render time and persisted
 in `localStorage`. Fonts that the current device cannot render are hidden from the options instead of silently

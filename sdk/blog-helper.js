@@ -3034,44 +3034,31 @@
     }
 
     var pending = null; // {range, anchor}
+    var _viaMouse = false; // true while the menu was opened via mouseup
 
     function hide() {
       bubble.style.display = "none";
       pending = null;
+      _viaMouse = false;
     }
 
     document.addEventListener("mouseup", function (e) {
       if (bubble.contains(e.target)) return;
       var mx = e.clientX, my = e.clientY;
       setTimeout(function () {
-        var sel = window.getSelection();
-        if (!sel || sel.isCollapsed || !sel.rangeCount) return hide();
-        var text = sel.toString();
-        if (!text || text.trim().length < 2 || text.length > 1000) return hide();
-        var range = sel.getRangeAt(0);
-        var node = range.commonAncestorContainer;
-        var el = node.nodeType === 3 ? node.parentNode : node;
-        if (!container.contains(el)) return hide();
-        if (el.closest && el.closest("span.bh-hl")) return hide();
-        if (el.closest && el.closest(".bh-comments, .bh-anchor-popover, .bh-select-bubble, .bh-page-reactions, .bh-share-panel")) return hide();
-
-        pending = { range: range, anchor: buildAnchor(range, container) };
-        if (!pending.anchor) return hide();
+        var valid = validateSelection();
+        if (!valid) return hide();
+        pending = valid;
+        _viaMouse = true; // selectionchange must not override mouse positioning
         // Follow the mouse position (where the user finished the selection)
-        syncCommentAction();
-        bubble.style.display = "";
-        var bw = bubble.offsetWidth, bh = bubble.offsetHeight;
-        var left = Math.max(8, Math.min(mx - bw / 2, window.innerWidth - bw - 8));
-        var top = Math.max(8, my - bh - 12);
-        bubble.style.left = left + "px";
-        bubble.style.top = top + "px";
+        showAt(mx, my + 12);
       }, 10);
     });
 
     // Keep the selection alive when clicking the bubble
     bubble.addEventListener("mousedown", function (e) { e.preventDefault(); });
-    bubble.addEventListener("click", function (e) {
-      var btn = e.target && e.target.closest ? e.target.closest("button[data-act]") : null;
+    function handleBubbleAction(target) {
+      var btn = target && target.closest ? target.closest("button[data-act]") : null;
       if (!btn || !pending) return;
       var act = btn.getAttribute("data-act");
       var pos = resolveAnchor(pending.anchor, container);
@@ -3095,12 +3082,63 @@
         if (sel3) sel3.removeAllRanges();
         openSharePanel(section, anchor, pos, config);
       }
-    });
+    }
 
+    // Shared validation of the current selection (used by mouse and touch paths)
+    function validateSelection() {
+      var sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+      var text = sel.toString();
+      if (!text || text.trim().length < 2 || text.length > 1000) return null;
+      var range = sel.getRangeAt(0);
+      var node = range.commonAncestorContainer;
+      var el = node.nodeType === 3 ? node.parentNode : node;
+      if (!container.contains(el)) return null;
+      if (el.closest && el.closest("span.bh-hl")) return null;
+      if (el.closest && el.closest(".bh-comments, .bh-anchor-popover, .bh-select-bubble, .bh-page-reactions, .bh-share-panel")) return null;
+      var anchor = buildAnchor(range, container);
+      if (!anchor) return null;
+      return { range: range, anchor: anchor };
+    }
+
+    function showAt(left, top) {
+      syncCommentAction();
+      bubble.style.display = "";
+      var bw = bubble.offsetWidth, bh = bubble.offsetHeight;
+      left = Math.max(8, Math.min(left - bw / 2, window.innerWidth - bw - 8));
+      bubble.style.left = left + "px";
+      bubble.style.top = Math.max(8, top - bh - 12) + "px";
+    }
+
+    // Touch path: iOS/Android selection handles never fire mouseup — drive the
+    // menu from selectionchange with a debounce so it appears once the user
+    // finishes dragging the handles. Positioned above the selection rect.
+    var touchTimer = null;
     document.addEventListener("selectionchange", function () {
       var sel = window.getSelection();
-      if (!sel || sel.isCollapsed) hide();
+      if (!sel || sel.isCollapsed) { hide(); return; }
+      if (_viaMouse) return; // desktop mouseup path owns the positioning
+      clearTimeout(touchTimer);
+      touchTimer = setTimeout(function () {
+        var valid = validateSelection();
+        if (!valid) return;
+        pending = valid;
+        var rect = valid.range.getBoundingClientRect();
+        showAt(rect.left + rect.width / 2, rect.top);
+      }, 350);
     });
+
+    bubble.addEventListener("click", function (e) { handleBubbleAction(e.target); });
+
+    // Keep the selection alive when tapping menu buttons on touch devices:
+    // preventDefault on touchstart stops iOS from clearing the selection, and
+    // handling the action on touchend (preventDefault) stops the synthetic
+    // click from double-firing.
+    bubble.addEventListener("touchstart", function (e) { e.preventDefault(); }, { passive: false });
+    bubble.addEventListener("touchend", function (e) {
+      e.preventDefault();
+      handleBubbleAction(e.target);
+    }, { passive: false });
   }
 
   // Module-level inline-comments host. The comment section element is the

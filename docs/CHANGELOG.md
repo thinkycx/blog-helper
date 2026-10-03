@@ -16,6 +16,9 @@
 - 复制/转发与评论功能解耦：使用其他评论系统（如 giscus）的页面同样有选中菜单（仅复制/转发，无评论按钮），深链照常可用
 
 ### 修复
+- iOS/移动端选中菜单不出现：触摸设备长按选择/拖动把手不触发 `mouseup`，
+  改为 `selectionchange` 防抖驱动（350ms，菜单定位在选区上方居中）；
+  菜单按钮增加 `touchstart/touchend` 保护，防止 tap 时 iOS 先清空选区
 - `loadShareOpts` 的 fallback 主题键残留已废弃的 `classic`（首次打开无风格 chip 高亮）
 - 分享卡片加载提示居中展示
 

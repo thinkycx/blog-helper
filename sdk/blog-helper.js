@@ -2176,24 +2176,24 @@
   // Styles are full layouts (header treatment + accent), not just colors.
   var SHARE_STYLES = {
     plain:    { label: "默认",   accent: "#f0ad4e", layout: "plain" },    // clean: no header, no quote mark
+    serene:   { label: "宁静风", accent: "#2a7fb8", layout: "serene" },   // ocean banner + white title
     quote:    { label: "引用风", accent: "#f0ad4e", layout: "quote" },    // brand header + big quote mark
     calendar: { label: "日历风", accent: "#3d5a80", layout: "calendar" }, // date header
-    serene:   { label: "宁静风", accent: "#2a7fb8", layout: "serene" },   // ocean banner + white title
     bamboo:   { label: "竹简风", accent: "#8a6d3b", layout: "bamboo" },   // vertical, right-to-left
   };
   var SHARE_FONTS = {
-    sans:    { label: "黑体", family: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif' },
     serif:   { label: "宋体", family: '"Songti SC", "SimSun", "Noto Serif SC", serif' },
+    sans:    { label: "黑体", family: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif' },
     kai:     { label: "楷体", family: '"Kaiti SC", "Kaiti TC", "STKaiti", "KaiTi", "DFKai-SB", "TW-Kai", serif' },
     fangsong:{ label: "仿宋", family: '"STFangsong", "FangSong", "FangSong_GB2312", serif' },
     yuanti:  { label: "圆体", family: '"Yuanti SC", "STXihei", "PingFang SC", sans-serif' },
   };
   var SHARE_BGS = {
     white: { label: "白", bg: "#ffffff", text: "#24292e", sub: "#586069", dark: false },
+    dark:  { label: "夜", bg: "#1b1f24", text: "#e6e8ea", sub: "#9aa4ae", dark: true },
     cream: { label: "米", bg: "#f8f3e6", text: "#3b3226", sub: "#8a7c62", dark: false },
     mist:  { label: "灰", bg: "#eef1f5", text: "#24292e", sub: "#586069", dark: false },
     green: { label: "绿", bg: "#e9f2ea", text: "#22382a", sub: "#5f7a66", dark: false },
-    dark:  { label: "夜", bg: "#1b1f24", text: "#e6e8ea", sub: "#9aa4ae", dark: true },
   };
 
   // Probe whether a font family actually resolves (vs silently falling back).
@@ -2221,7 +2221,7 @@
       var o = JSON.parse(localStorage.getItem("bh-share-opts") || "{}");
       if (SHARE_STYLES[o.theme] && SHARE_FONTS[o.font] && SHARE_BGS[o.bg]) return o;
     } catch (e) { /* fall through */ }
-    return { theme: "classic", font: "sans", bg: "white" };
+    return { theme: "plain", font: "serif", bg: "white" };
   }
 
   function saveShareOpts(o) {
@@ -2316,11 +2316,16 @@
     var quoteTop = bannerH ? bannerH + 50 :
       layout === "plain" ? PAD + 70 :   // breathing room on top for symmetry
       PAD + headerH + (headerH ? 30 : 0);
-    // bamboo: extra gap so the bottom rope sits between the vertical text and
-    // the footer (title/QR must not overlap the bamboo slips)
-    var titleTop = quoteTop + quoteH + (layout === "bamboo" ? 110 : 60);
+    var titleGap = layout === "bamboo" ? 110 : 60; // bamboo: bottom rope fits in the gap
     var footH = 300;                // QR row + centered host row
-    var H = titleTop + titleH + 40 + footH;
+    // Baseline aspect ratio: short quotes fill a uniform 3:4 card (1080x1440);
+    // longer passages grow into a long image (content over ratio).
+    var H_MIN = Math.round(W * 4 / 3);
+    var H = Math.max(quoteTop + quoteH + titleGap + titleH + 40 + footH, H_MIN);
+    // Bottom block (title + divider + QR + host) is pinned to the card bottom,
+    // so short cards breathe in the middle instead of ending early.
+    var divY = H - footH - 20;
+    var titleTop = divY - titleH - 20;
 
     canvas.width = W;
     canvas.height = H;
@@ -2456,7 +2461,6 @@
     }
 
     // divider
-    var divY = titleTop + titleH + 20;
     ctx.fillStyle = bgp.dark ? "rgba(255,255,255,0.14)" : "#e3e6ea";
     ctx.fillRect(PAD, divY, maxW, 2);
 
@@ -2509,7 +2513,7 @@
     function optRowHTML(label, map, key) {
       var html = '<div class="bh-share-opt-row"><span class="bh-share-opt-label">' + label + '</span>';
       for (var k in map) {
-        if (key === "font" && k !== "sans" &&
+        if (key === "font" && k !== "serif" &&
             !shareFontAvailable(shareFontProbeName(map[k].family))) {
           continue; // device cannot render this font — hide the option entirely
         }
@@ -2563,8 +2567,8 @@
     var canvas = null;
     function renderCard() {
       // A persisted font choice may be unavailable on this device — fall back.
-      if (opts.font !== "sans" && !shareFontAvailable(shareFontProbeName(SHARE_FONTS[opts.font].family))) {
-        opts.font = "sans";
+      if (opts.font !== "serif" && !shareFontAvailable(shareFontProbeName(SHARE_FONTS[opts.font].family))) {
+        opts.font = "serif";
       }
       try {
         canvas = renderShareCard(anchor.exact, title, link, siteName, opts);

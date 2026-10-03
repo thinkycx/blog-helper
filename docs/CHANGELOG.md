@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- Uniform 3:4 baseline aspect ratio for share cards: short quotes render as a
+  standard 1080x1440 card (content top, footer pinned to bottom); long
+  passages still grow into long images
+
+### Changed
+- Default share options: font 宋体 (serif) first; option order — styles
+  默认/宁静风/引用风/日历风/竹简风, backgrounds 白/夜/米/灰/绿
+- Fix stale `classic` fallback theme key in `loadShareOpts` (first open showed
+  no active style chip)
+
+### Added
 - QR center avatar on share cards (error-correction level H, ~22% size with white ring —
   same approach as WeChat/Alipay QR logos; scannability unaffected). Avatar path
   auto-probes `/asset/img/avator.png` then `.jpg`, overridable via `features.shareAvatar`

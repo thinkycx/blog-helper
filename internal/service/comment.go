@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -51,6 +52,7 @@ type PostCommentRequest struct {
 	Bio         string
 	Content     string
 	ParentID    *int64
+	Anchor      string // inline-comment anchor JSON, empty = whole-page comment
 	IP          string
 	UserAgent   string
 	Fingerprint string
@@ -154,6 +156,12 @@ func (s *CommentService) PostComment(ctx context.Context, req *PostCommentReques
 		status = "approved"
 	}
 
+	// Validate + normalize inline anchor (JSON, size-capped)
+	anchor, err := normalizeAnchor(req.Anchor)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create comment
 	comment, err := s.store.CreateComment(ctx, &model.Comment{
 		SiteID:      req.SiteID,
@@ -161,6 +169,7 @@ func (s *CommentService) PostComment(ctx context.Context, req *PostCommentReques
 		CommenterID: commenter.ID,
 		ParentID:    req.ParentID,
 		Content:     strings.TrimSpace(req.Content),
+		Anchor:      anchor,
 		Status:      status,
 		IP:          req.IP,
 		UserAgent:   req.UserAgent,
@@ -194,6 +203,7 @@ func (s *CommentService) PostComment(ctx context.Context, req *PostCommentReques
 			PageSlug:  comment.PageSlug,
 			ParentID:  comment.ParentID,
 			Content:   comment.Content,
+			Anchor:    comment.Anchor,
 			Status:    comment.Status,
 			CreatedAt: comment.CreatedAt.Format("2006-01-02 15:04:05"),
 			Author:    author,
@@ -559,6 +569,52 @@ func (s *CommentService) cleanupRateCache() {
 }
 
 // --- Helpers ---
+
+// normalizeAnchor validates an inline-comment anchor payload.
+// It accepts an empty string (whole-page comment) or a JSON object with the
+// W3C-Web-Annotation-style fields {exact, prefix, suffix, start, end},
+// re-marshaled compactly and capped at 2KB to prevent abuse.
+func normalizeAnchor(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	if len(raw) > 2048 {
+		return "", fmt.Errorf("anchor too large")
+	}
+	var a map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &a); err != nil {
+		return "", fmt.Errorf("invalid anchor: must be a JSON object")
+	}
+	// Only keep known fields, with sane types and length caps.
+	out := make(map[string]interface{}, 5)
+	if v, ok := a["exact"].(string); ok && v != "" {
+		if len(v) > 1024 {
+			return "", fmt.Errorf("anchor exact too large")
+		}
+		out["exact"] = v
+	} else {
+		return "", fmt.Errorf("invalid anchor: exact is required")
+	}
+	for _, k := range []string{"prefix", "suffix"} {
+		if v, ok := a[k].(string); ok && v != "" {
+			if len(v) > 128 {
+				v = v[:128]
+			}
+			out[k] = v
+		}
+	}
+	for _, k := range []string{"start", "end"} {
+		if v, ok := a[k].(float64); ok && v >= 0 {
+			out[k] = int(v)
+		}
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return "", fmt.Errorf("invalid anchor")
+	}
+	return string(b), nil
+}
 
 func generateToken() (string, error) {
 	b := make([]byte, 32)

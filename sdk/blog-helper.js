@@ -54,6 +54,7 @@
       referrersDays: 30,
       referrersLimit: 10,
       showComments: "auto",
+      showInlineComments: true, // text-anchored inline comments (select text → comment → highlight)
     },
     pvLabel: "阅读",
     uvLabel: "观众",
@@ -1002,8 +1003,12 @@
       '<div class="bh-comment-form-trigger"><button class="bh-write-comment-btn" type="button">写评论</button></div>' +
       '<div class="bh-comment-form" style="display:none"></div>';
     // Insert after the article element so comments are visually separate from post content.
-    // Falls back to appending inside the container if insertAfter is not possible.
-    if (container.nextSibling) {
+    // If the container is a top-level wrapper (parent is <body>), inserting as a sibling
+    // would escape the page's width constraint (e.g. md2site ".container") — append
+    // inside the container instead so comments stay in the content column.
+    if (container.parentNode === document.body) {
+      container.appendChild(section);
+    } else if (container.nextSibling) {
       container.parentNode.insertBefore(section, container.nextSibling);
     } else {
       container.parentNode.appendChild(section);
@@ -1014,7 +1019,15 @@
       comments: [],
       me: null,
       replyTo: null,
+      anchor: null, // inline-comment anchor being written (null = whole-page comment)
     };
+
+    // Keep a stable reference to the form element — it may be temporarily
+    // moved into an inline-comment popover.
+    section._bhFormEl = section.querySelector(".bh-comment-form");
+
+    // Inline comments (text-anchored annotations)
+    initInlineComments(section, state, config, slug);
 
     // "写评论" button shows form
     section.querySelector(".bh-write-comment-btn").addEventListener("click", function () {
@@ -1055,8 +1068,9 @@
 
   function showCommentForm(section, state, config, slug) {
     var trigger = section.querySelector(".bh-comment-form-trigger");
-    var form = section.querySelector(".bh-comment-form");
+    var form = section.querySelector(".bh-comment-form") || section._bhFormEl;
     if (trigger) trigger.style.display = "none";
+    if (!form) return;
     form.style.display = "";
     renderCommentForm(section, state, config, slug);
     if (state.me) {
@@ -1070,9 +1084,9 @@
 
   function hideCommentForm(section) {
     var trigger = section.querySelector(".bh-comment-form-trigger");
-    var form = section.querySelector(".bh-comment-form");
+    var form = section.querySelector(".bh-comment-form") || section._bhFormEl;
     if (trigger) trigger.style.display = "";
-    form.style.display = "none";
+    if (form) form.style.display = "none";
   }
 
   // Ensure blog_url has https:// protocol
@@ -1137,6 +1151,16 @@
       }
     }
 
+    // Inline-comment quote: the body text this comment is anchored to
+    var quoteBlock = "";
+    if (c.anchor) {
+      var a = parseAnchor(c.anchor);
+      if (a && a.exact) {
+        quoteBlock = '<div class="bh-quote" data-cid="' + c.id + '" title="点击跳转到正文">“' +
+          escapeHtml(a.exact.length > 120 ? a.exact.slice(0, 120) + "…" : a.exact) + '”</div>';
+      }
+    }
+
     return '<div class="bh-comment-item' + (isReply ? ' bh-comment-reply' : '') + '" data-id="' + c.id + '" id="comment-' + c.id + '">' +
       '<span class="bh-comment-author-wrap">' +
         '<img class="bh-comment-avatar" src="' + avatar + '" alt=""' +
@@ -1152,7 +1176,7 @@
             '<a class="bh-comment-anchor" href="#comment-' + c.id + '" title="链接到此评论">#</a>' +
           '</span>' +
         '</div>' +
-        '<div class="bh-comment-content">' + renderMarkdown(c.content) + '</div>' +
+        '<div class="bh-comment-content">' + quoteBlock + renderMarkdown(c.content) + '</div>' +
         '<div class="bh-comment-actions">' +
           renderReactionButtons(c) +
           '<button class="bh-reply-btn" data-id="' + c.id + '">回复</button>' +
@@ -1306,11 +1330,35 @@
         });
       });
     }
+
+    // Bind inline-comment quote blocks — click to jump back to the highlighted text
+    var quotes = list.querySelectorAll(".bh-quote");
+    for (var qI = 0; qI < quotes.length; qI++) {
+      quotes[qI].addEventListener("click", function () {
+        var cid = this.getAttribute("data-cid");
+        var scope = (section._bhInline && section._bhInline.container) || document;
+        var marks = scope.querySelectorAll("span.bh-hl");
+        for (var mI = 0; mI < marks.length; mI++) {
+          var cids = (marks[mI].getAttribute("data-cids") || "").split(",");
+          if (cids.indexOf(cid) !== -1) {
+            marks[mI].scrollIntoView({ behavior: "smooth", block: "center" });
+            marks[mI].classList.remove("bh-hl-flash");
+            void marks[mI].offsetWidth;
+            marks[mI].classList.add("bh-hl-flash");
+            return;
+          }
+        }
+      });
+    }
+
+    // Refresh inline highlights (comments may have changed)
+    if (section._bhRefreshInline) section._bhRefreshInline();
   }
 
-  function renderCommentForm(section, state, config, slug) {
+  function renderCommentForm(section, state, config, slug, mountOverride) {
     slug = slug || getCurrentSlug();
-    var form = section.querySelector(".bh-comment-form");
+    var form = mountOverride || section.querySelector(".bh-comment-form");
+    if (!form) return;
     var me = state.me;
     var hasToken = !!me; // token is HttpOnly; rely on server-set state.me
 
@@ -1584,6 +1632,7 @@
           bio: (form.querySelector('input[name="bio"]') || {}).value || "",
           content: content,
           parent_id: state.replyTo ? state.replyTo.id : null,
+          anchor: state.anchor ? JSON.stringify(state.anchor) : "",
           fingerprint: _fingerprintCache || "",
           challenge: proof.challenge,
           answer: proof.answer,
@@ -1603,8 +1652,15 @@
             state.comments.push(newComment);
           }
           state.replyTo = null;
+          state.anchor = null;
           renderCommentList(section, state, config);
-          hideCommentForm(section);
+          // Inline-comment popover: refresh its comment list instead of hiding the form
+          var pop = form.closest ? form.closest(".bh-anchor-popover") : null;
+          if (pop && pop._bhOnPosted) {
+            pop._bhOnPosted(newComment);
+          } else {
+            hideCommentForm(section);
+          }
           // Show pending notice
           if (newComment && newComment.status === "pending") {
             var notice = document.createElement("div");
@@ -1757,6 +1813,1242 @@
         window.location.href = this.getAttribute("data-href");
       });
     }
+  }
+
+  // ============================================================
+  // 6c. Inline Comments (text-anchored annotations)
+  //
+  // Select text in the article → floating "评论这段" bubble → comment with a
+  // content-addressed anchor (W3C-Web-Annotation-style TextQuoteSelector:
+  // {exact, prefix, suffix, start, end}). On load, anchors are resolved back
+  // to DOM ranges and wrapped in <span class="bh-hl"> highlights. Clicking a
+  // highlight opens a popover with the comments on that passage; the quote in
+  // the bottom comment list jumps back to the highlight.
+  // ============================================================
+
+  var ANCHOR_CONTEXT = 32; // chars of prefix/suffix stored around the selection
+
+  function throttle(fn, ms) {
+    var last = 0, timer = null;
+    return function () {
+      var now = Date.now();
+      if (now - last >= ms) {
+        last = now;
+        fn();
+      } else if (!timer) {
+        timer = setTimeout(function () {
+          timer = null;
+          last = Date.now();
+          fn();
+        }, ms - (now - last));
+      }
+    };
+  }
+
+  function parseAnchor(raw) {
+    if (!raw) return null;
+    try {
+      var a = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (!a || !a.exact || typeof a.exact !== "string") return null;
+      return a;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Build an anchor for the current selection (Range) within container.
+  function buildAnchor(range, container) {
+    var fullText = container.textContent;
+    var pre = document.createRange();
+    pre.setStart(container, 0);
+    pre.setEnd(range.startContainer, range.startOffset);
+    var start = pre.toString().length;
+    var exact = range.toString();
+    if (!exact) return null;
+    return {
+      exact: exact,
+      prefix: fullText.slice(Math.max(0, start - ANCHOR_CONTEXT), start),
+      suffix: fullText.slice(start + exact.length, start + exact.length + ANCHOR_CONTEXT),
+      start: start,
+      end: start + exact.length,
+    };
+  }
+
+  // Resolve an anchor to {start, end} offsets in container.textContent.
+  // Strategy: position-first with exact-text verification, then fall back to
+  // prefix+exact+suffix search, then plain exact search. Returns null if the
+  // passage no longer exists (comment degrades to quote-only display).
+  function resolveAnchor(a, container) {
+    var fullText = container.textContent;
+    if (typeof a.start === "number" && typeof a.end === "number" &&
+        a.start >= 0 && a.end <= fullText.length && a.end > a.start) {
+      if (fullText.slice(a.start, a.end) === a.exact) {
+        return { start: a.start, end: a.end };
+      }
+    }
+    var pre = a.prefix || "";
+    var probe = pre + a.exact + (a.suffix || "");
+    var idx = fullText.indexOf(probe);
+    if (idx >= 0) return { start: idx + pre.length, end: idx + pre.length + a.exact.length };
+    idx = fullText.indexOf(a.exact);
+    if (idx >= 0) return { start: idx, end: idx + a.exact.length };
+    return null;
+  }
+
+  // Create a DOM Range from character offsets in container.textContent.
+  function rangeFromOffsets(container, start, end) {
+    var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+    var node, offset = 0, started = false;
+    var range = document.createRange();
+    while ((node = walker.nextNode())) {
+      var len = node.nodeValue.length;
+      if (!started && offset + len >= start) {
+        range.setStart(node, start - offset);
+        started = true;
+      }
+      if (started && offset + len >= end) {
+        range.setEnd(node, end - offset);
+        return range;
+      }
+      offset += len;
+    }
+    return null;
+  }
+
+  // Wrap the text-node portions of a range in one <span class="bh-hl"> each.
+  // Per-text-node wrapping is layout-safe for any selection (crossing inline
+  // elements, bare text next to <p>s, multiple blocks) — the same approach
+  // browser find-in-page uses. Returns the marks created (empty on failure).
+  function wrapRangeMarks(range) {
+    var marks = [];
+    var root = range.commonAncestorContainer;
+    var el = root.nodeType === 3 ? root.parentNode : root;
+    if (!el) return marks;
+    var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
+    var nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      if (range.intersectsNode && !range.intersectsNode(node)) continue;
+      var startOff = 0;
+      var endOff = node.nodeValue.length;
+      if (node === range.startContainer) startOff = range.startOffset;
+      if (node === range.endContainer) endOff = range.endOffset;
+      if (endOff <= startOff) continue;
+      var r = document.createRange();
+      r.setStart(node, startOff);
+      r.setEnd(node, endOff);
+      var mark = document.createElement("span");
+      mark.className = "bh-hl";
+      try {
+        r.surroundContents(mark);
+        marks.push(mark);
+      } catch (e) {
+        /* skip this segment */
+      }
+    }
+    return marks;
+  }
+
+  function clearHighlights(container) {
+    var marks = container.querySelectorAll("span.bh-hl");
+    for (var i = 0; i < marks.length; i++) {
+      var m = marks[i];
+      // Keep temporary deep-link highlights (no data-cids) — they are not
+      // backed by comments and would otherwise vanish when comments refresh.
+      if (m.id && m.id.indexOf("bh-") === 0 && !m.getAttribute("data-cids")) continue;
+      var parent = m.parentNode;
+      if (!parent) continue;
+      while (m.firstChild) parent.insertBefore(m.firstChild, m);
+      parent.removeChild(m);
+    }
+    container.normalize();
+  }
+
+  // Resolve all anchored comments, group by position, and paint highlights.
+  function renderInlineHighlights(section, state) {
+    var inline = section._bhInline;
+    if (!inline || !inline.content) return;
+    var container = inline.content;
+    clearHighlights(container);
+
+    var groups = {};
+    var ordered = [];
+    for (var i = 0; i < state.comments.length; i++) {
+      var c = state.comments[i];
+      if (!c.anchor) continue;
+      var a = parseAnchor(c.anchor);
+      if (!a) continue;
+      var pos = resolveAnchor(a, container);
+      if (!pos) continue; // passage gone — quote still shows in the comment list
+      var key = pos.start + ":" + pos.end;
+      if (!groups[key]) {
+        groups[key] = { start: pos.start, end: pos.end, cids: [] };
+        ordered.push(groups[key]);
+      }
+      groups[key].cids.push(c.id);
+    }
+
+    // Wrap from last to first so earlier offsets stay valid; skip overlaps.
+    ordered.sort(function (x, y) { return y.start - x.start; });
+    var acceptedStart = Infinity;
+    var acceptedMarks = null;
+    for (var g = 0; g < ordered.length; g++) {
+      var grp = ordered[g];
+      if (grp.end > acceptedStart) {
+        // Overlapping passage (e.g. someone quoted a wider range): merge its
+        // comments into the covering highlight so they stay reachable.
+        if (acceptedMarks) {
+          for (var om = 0; om < acceptedMarks.length; om++) {
+            var existing = (acceptedMarks[om].getAttribute("data-cids") || "").split(",");
+            for (var oc = 0; oc < grp.cids.length; oc++) {
+              if (existing.indexOf(String(grp.cids[oc])) === -1) existing.push(String(grp.cids[oc]));
+            }
+            acceptedMarks[om].setAttribute("data-cids", existing.join(","));
+          }
+        }
+        continue;
+      }
+      var r = rangeFromOffsets(container, grp.start, grp.end);
+      if (!r) continue;
+      var marks = wrapRangeMarks(r);
+      if (marks.length) {
+        for (var m = 0; m < marks.length; m++) {
+          marks[m].setAttribute("data-cids", grp.cids.join(","));
+        }
+        // Deterministic id enables deep links (#bh-{start}-{end}) to this passage
+        marks[0].id = "bh-" + grp.start + "-" + grp.end;
+        acceptedStart = grp.start;
+        acceptedMarks = marks;
+      }
+    }
+
+    handleDeepLink(section);
+  }
+
+  // --- Share card (quote card with QR deep link) ---
+
+  var _qrReady = false;
+  var _qrLoading = false;
+  var _qrCallbacks = [];
+
+  function loadQrcode(cb) {
+    if (_qrReady && window.qrcode) { cb(); return; }
+    _qrCallbacks.push(cb);
+    if (_qrLoading) return;
+    _qrLoading = true;
+    var script = document.createElement("script");
+    // Load from local asset (same directory as blog-helper.js)
+    var myScript = document.querySelector('script[src*="blog-helper"]');
+    var baseDir = myScript ? myScript.src.replace(/[^\/]+$/, '') : 'asset/js/';
+    script.src = baseDir + "qrcode.min.js";
+    script.onload = function () {
+      _qrReady = true;
+      for (var i = 0; i < _qrCallbacks.length; i++) _qrCallbacks[i]();
+      _qrCallbacks = [];
+    };
+    script.onerror = function () {
+      _qrLoading = false;
+      for (var i = 0; i < _qrCallbacks.length; i++) _qrCallbacks[i]();
+      _qrCallbacks = [];
+    };
+    document.head.appendChild(script);
+  }
+
+  // Wrap text for canvas rendering (CJK-aware: break anywhere, prefer not
+  // starting a line with closing punctuation).
+  function canvasWrapText(ctx, text, maxWidth, maxLines) {
+    var lines = [];
+    var line = "";
+    var noStart = "，。！？；：、）」』”…,.!?;:)]}\"'";
+    for (var i = 0; i < text.length; i++) {
+      var ch = text[i];
+      var next = line + ch;
+      if (ctx.measureText(next).width > maxWidth && line) {
+        if (noStart.indexOf(ch) !== -1 && line.length > 1) {
+          // move last char of line down with the punctuation
+          lines.push(line.slice(0, -1));
+          line = line.slice(-1) + ch;
+        } else {
+          lines.push(line);
+          line = ch;
+        }
+        if (maxLines && lines.length === maxLines) {
+          return lines;
+        }
+      } else {
+        line = next;
+      }
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  function drawQrcode(ctx, url, x, y, size) {
+    var qr = window.qrcode(0, "M");
+    qr.addData(url);
+    qr.make();
+    var count = qr.getModuleCount();
+    var cell = size / (count + 2); // include quiet zone
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(x, y, size, size);
+    ctx.fillStyle = "#24292e";
+    var offset = cell; // quiet zone
+    for (var r = 0; r < count; r++) {
+      for (var c = 0; c < count; c++) {
+        if (qr.isDark(r, c)) {
+          ctx.fillRect(x + (c + 1) * cell, y + (r + 1) * cell, Math.ceil(cell), Math.ceil(cell));
+        }
+      }
+    }
+  }
+
+  function roundRectPath(ctx, x, y, w, h, r) {
+    if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); return; }
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  // Render the share card: quote + post title + site + QR deep link.
+  // --- Share card render options (persisted per browser) ---
+  // Styles are full layouts (header treatment + accent), not just colors.
+  var SHARE_STYLES = {
+    plain:    { label: "默认",   accent: "#f0ad4e", layout: "plain" },    // clean: no header, no quote mark
+    quote:    { label: "引用风", accent: "#f0ad4e", layout: "quote" },    // brand header + big quote mark
+    calendar: { label: "日历风", accent: "#3d5a80", layout: "calendar" }, // date header
+    serene:   { label: "宁静风", accent: "#2a7fb8", layout: "serene" },   // ocean banner + white title
+    bamboo:   { label: "竹简风", accent: "#8a6d3b", layout: "bamboo" },   // vertical, right-to-left
+  };
+  var SHARE_FONTS = {
+    sans:    { label: "黑体", family: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif' },
+    serif:   { label: "宋体", family: '"Songti SC", "SimSun", "Noto Serif SC", serif' },
+    kai:     { label: "楷体", family: '"Kaiti SC", "Kaiti TC", "STKaiti", "KaiTi", "DFKai-SB", "TW-Kai", serif' },
+    fangsong:{ label: "仿宋", family: '"STFangsong", "FangSong", "FangSong_GB2312", serif' },
+    yuanti:  { label: "圆体", family: '"Yuanti SC", "STXihei", "PingFang SC", sans-serif' },
+  };
+  var SHARE_BGS = {
+    white: { label: "白", bg: "#ffffff", text: "#24292e", sub: "#586069", dark: false },
+    cream: { label: "米", bg: "#f8f3e6", text: "#3b3226", sub: "#8a7c62", dark: false },
+    mist:  { label: "灰", bg: "#eef1f5", text: "#24292e", sub: "#586069", dark: false },
+    green: { label: "绿", bg: "#e9f2ea", text: "#22382a", sub: "#5f7a66", dark: false },
+    dark:  { label: "夜", bg: "#1b1f24", text: "#e6e8ea", sub: "#9aa4ae", dark: true },
+  };
+
+  // Probe whether a font family actually resolves (vs silently falling back).
+  // Compares latin glyph widths against a monospace baseline — reliable because
+  // proportional CJK fonts render latin very differently from monospace.
+  function shareFontAvailable(family) {
+    try {
+      var c = document.createElement("canvas").getContext("2d");
+      c.font = '72px monospace';
+      var mono = c.measureText("mmmmmmmmmmlli").width;
+      c.font = '72px "' + family + '", monospace';
+      return Math.abs(c.measureText("mmmmmmmmmmlli").width - mono) > 1;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // First family of a font stack that is actually installed (for probing).
+  function shareFontProbeName(family) {
+    return String(family).split(",")[0].replace(/["']/g, "").trim();
+  }
+
+  function loadShareOpts() {
+    try {
+      var o = JSON.parse(localStorage.getItem("bh-share-opts") || "{}");
+      if (SHARE_STYLES[o.theme] && SHARE_FONTS[o.font] && SHARE_BGS[o.bg]) return o;
+    } catch (e) { /* fall through */ }
+    return { theme: "classic", font: "sans", bg: "white" };
+  }
+
+  function saveShareOpts(o) {
+    try { localStorage.setItem("bh-share-opts", JSON.stringify(o)); } catch (e) { /* ignore */ }
+  }
+
+  var SHARE_LINE_H = 68;       // quote line height
+  var SHARE_PARA_GAP = 40;     // extra gap between quoted paragraphs
+  var SHARE_MAX_LINES = 80;    // hard cap for extremely long selections
+
+  // Render the share card: quote (paragraph-aware, grows into a long image) +
+  // post title + QR deep link + centered "@host" footer. Style driven by opts.
+  function renderShareCard(quote, title, link, siteName, opts) {
+    opts = opts || loadShareOpts();
+    var style = SHARE_STYLES[opts.theme] || SHARE_STYLES.plain;
+    var font = SHARE_FONTS[opts.font] || SHARE_FONTS.sans;
+    var bgp = SHARE_BGS[opts.bg] || SHARE_BGS.white;
+
+    var W = 1080;
+    var PAD = 90;
+    var maxW = W - PAD * 2;
+    var canvas = document.createElement("canvas");
+    var ctx = canvas.getContext("2d");
+    ctx.textBaseline = "top";
+    var layout = style.layout;
+
+    // Split the passage into paragraphs (selections across <p>s contain \n+)
+    var paras = String(quote).split(/\n+/).map(function (s) { return s.trim(); })
+      .filter(function (s) { return s.length > 0; });
+    if (paras.length === 0) paras = [String(quote).trim() || "..."];
+
+    // measure: wrap every paragraph with the selected font
+    var quoteFont = "46px " + font.family;
+    ctx.font = quoteFont;
+
+    // bamboo: traditional vertical layout — right-to-left columns, one
+    // paragraph per column-set; groups of columns stack vertically (long image)
+    var BAM_CHAR = 46, BAM_COL_ADV = 68, BAM_CHAR_ADV = 56, BAM_CHARS_PER_COL = 13;
+    var BAM_MAX_GROUPS = 6;
+    var bambooGroups = null;
+    var quoteH;
+
+    if (layout === "bamboo") {
+      var maxColsPerRow = Math.floor(maxW / BAM_COL_ADV);
+      var columns = [];
+      for (var bp = 0; bp < paras.length; bp++) {
+        var chars = paras[bp].split("");
+        for (var bc = 0; bc < chars.length; bc += BAM_CHARS_PER_COL) {
+          columns.push(chars.slice(bc, bc + BAM_CHARS_PER_COL));
+        }
+      }
+      var maxCols = BAM_MAX_GROUPS * maxColsPerRow;
+      if (columns.length > maxCols) {
+        columns = columns.slice(0, maxCols);
+        var lastCol = columns[columns.length - 1];
+        lastCol[lastCol.length - 1] = "\u2026";
+      }
+      bambooGroups = [];
+      for (var bg = 0; bg < columns.length; bg += maxColsPerRow) {
+        bambooGroups.push(columns.slice(bg, bg + maxColsPerRow));
+      }
+      var groupH = BAM_CHARS_PER_COL * BAM_CHAR_ADV;
+      quoteH = bambooGroups.length * groupH + (bambooGroups.length - 1) * 80;
+    } else {
+      var paraLines = [];
+      var totalLines = 0;
+      var capped = false;
+      for (var pi = 0; pi < paras.length; pi++) {
+        if (totalLines >= SHARE_MAX_LINES) { capped = true; break; }
+        var remain = SHARE_MAX_LINES - totalLines;
+        var lines = canvasWrapText(ctx, paras[pi], maxW, remain);
+        paraLines.push(lines);
+        totalLines += lines.length;
+      }
+      if (capped && paraLines.length) {
+        var lastPara = paraLines[paraLines.length - 1];
+        lastPara[lastPara.length - 1] += "……";
+      }
+      quoteH = totalLines * SHARE_LINE_H + (paraLines.length - 1) * SHARE_PARA_GAP;
+    }
+
+    // serene: the title lives on the ocean banner, not in the bottom block
+    var bannerH = layout === "serene" ? 340 : 0;
+    ctx.font = (layout === "serene" ? "bold 40px " : "30px ") + font.family;
+    var titleLines = layout === "serene" ? [] : canvasWrapText(ctx, title, maxW, 2);
+    var titleH = titleLines.length * 44;
+
+    var headerH = layout === "quote" ? 96 :          // brand bar + site name
+                  layout === "calendar" ? 150 :        // big date + weekday
+                  layout === "bamboo" ? 70 :           // binding bar
+                  0;                                   // plain
+    var quoteTop = bannerH ? bannerH + 50 :
+      layout === "plain" ? PAD + 70 :   // breathing room on top for symmetry
+      PAD + headerH + (headerH ? 30 : 0);
+    // bamboo: extra gap so the bottom rope sits between the vertical text and
+    // the footer (title/QR must not overlap the bamboo slips)
+    var titleTop = quoteTop + quoteH + (layout === "bamboo" ? 110 : 60);
+    var footH = 300;                // QR row + centered host row
+    var H = titleTop + titleH + 40 + footH;
+
+    canvas.width = W;
+    canvas.height = H;
+    ctx = canvas.getContext("2d");
+    ctx.textBaseline = "top";
+
+    // background
+    ctx.fillStyle = bgp.bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // --- header per style ---
+    if (layout === "quote") {
+      // brand bar + site name (top-left)
+      ctx.fillStyle = style.accent;
+      roundRectPath(ctx, PAD, PAD, 10, 44, 5);
+      ctx.fill();
+      ctx.font = "bold 34px " + font.family;
+      ctx.fillStyle = bgp.text;
+      ctx.fillText(siteName || "", PAD + 32, PAD + 2);
+      // big opening quote mark
+      ctx.font = 'bold 90px Georgia, serif';
+      ctx.fillStyle = style.accent;
+      ctx.fillText("\u201c", PAD - 6, quoteTop - 34);
+    } else if (layout === "calendar") {
+      var now = new Date();
+      var wd = ["日", "一", "二", "三", "四", "五", "六"][now.getDay()];
+      ctx.fillStyle = style.accent;
+      ctx.font = "bold 92px " + font.family;
+      ctx.fillText(String(now.getDate()), PAD, PAD - 6);
+      ctx.font = "bold 30px " + font.family;
+      ctx.fillStyle = bgp.text;
+      var dateRight = " " + now.getFullYear() + " / " + (now.getMonth() + 1);
+      ctx.fillText(dateRight, PAD + 130, PAD + 14);
+      ctx.font = "26px " + font.family;
+      ctx.fillStyle = bgp.sub;
+      ctx.fillText("星期" + wd, PAD + 130, PAD + 56);
+      ctx.fillStyle = bgp.dark ? "rgba(255,255,255,0.14)" : "#e3e6ea";
+      ctx.fillRect(PAD, PAD + 108, maxW, 2);
+    } else if (layout === "serene") {
+      // ocean banner: blue gradient + translucent wave layers, white title on top
+      var grad = ctx.createLinearGradient(0, 0, 0, bannerH);
+      grad.addColorStop(0, "#2a6f9e");   // dusk blue
+      grad.addColorStop(0.55, "#16466b");
+      grad.addColorStop(1, "#0b2a44");   // deep sea
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, bannerH);
+      for (var wl = 0; wl < 3; wl++) {
+        ctx.beginPath();
+        var waveBase = bannerH - 70 - wl * 24;
+        ctx.moveTo(0, waveBase);
+        for (var wx = 0; wx <= W; wx += 8) {
+          ctx.lineTo(wx, waveBase + Math.sin(wx / 95 + wl * 1.9) * (11 - wl * 2));
+        }
+        ctx.lineTo(W, bannerH);
+        ctx.lineTo(0, bannerH);
+        ctx.closePath();
+        ctx.fillStyle = "rgba(255,255,255," + (0.07 + wl * 0.05) + ")";
+        ctx.fill();
+      }
+      // white title on the banner
+      ctx.font = "bold 40px " + font.family;
+      ctx.fillStyle = "#ffffff";
+      var bannerTitleLines = canvasWrapText(ctx, title, maxW - 60, 2);
+      for (var bt = 0; bt < bannerTitleLines.length; bt++) {
+        ctx.fillText(bannerTitleLines[bt], PAD, 96 + bt * 58);
+      }
+      // subtle host label under the title
+      ctx.font = "24px " + font.family;
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.fillText("@" + window.location.hostname, PAD, 96 + bannerTitleLines.length * 58 + 18);
+    } else if (layout === "bamboo") {
+      // binding ropes: top edge + right after the vertical text (so the
+      // footer/QR never covers the slips)
+      var ropeY = titleTop - 52;
+      ctx.fillStyle = style.accent;
+      ctx.fillRect(PAD, PAD, maxW, 8);
+      ctx.fillRect(PAD, ropeY, maxW, 8);
+      for (var knot = 0; knot < 3; knot++) {
+        var kx = PAD + (maxW / 4) * (knot + 1);
+        ctx.beginPath();
+        ctx.arc(kx, PAD + 4, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(kx, ropeY + 4, 7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // quote: bamboo = vertical right-to-left columns; others = horizontal
+    ctx.font = quoteFont;
+    ctx.fillStyle = bgp.text;
+    if (layout === "bamboo") {
+      var bGroupH = BAM_CHARS_PER_COL * BAM_CHAR_ADV;
+      for (var gI = 0; gI < bambooGroups.length; gI++) {
+        var gTop = quoteTop + gI * (bGroupH + 80);
+        var gCols = bambooGroups[gI];
+        for (var cI = 0; cI < gCols.length; cI++) {
+          // first column starts at the RIGHT (traditional writing order)
+          var colCenterX = W - PAD - 24 - cI * BAM_COL_ADV;
+          var colChars = gCols[cI];
+          for (var chI = 0; chI < colChars.length; chI++) {
+            var chStr = colChars[chI];
+            ctx.fillText(chStr, colCenterX - ctx.measureText(chStr).width / 2, gTop + chI * BAM_CHAR_ADV);
+          }
+        }
+      }
+    } else {
+      var y = quoteTop;
+      for (var pp = 0; pp < paraLines.length; pp++) {
+        var plines = paraLines[pp];
+        for (var pl = 0; pl < plines.length; pl++) {
+          ctx.fillText(plines[pl], PAD, y);
+          y += SHARE_LINE_H;
+        }
+        if (pp < paraLines.length - 1) y += SHARE_PARA_GAP; // paragraph gap
+      }
+    }
+
+    // bamboo: faint slip-seam lines between vertical columns
+    if (layout === "bamboo") {
+      ctx.fillStyle = bgp.dark ? "rgba(255,255,255,0.10)" : "rgba(90, 70, 40, 0.14)";
+      var bGroupH2 = BAM_CHARS_PER_COL * BAM_CHAR_ADV;
+      for (var gS = 0; gS < bambooGroups.length; gS++) {
+        var gTopS = quoteTop + gS * (bGroupH2 + 80);
+        var seamCount = bambooGroups[gS].length; // seam after each column
+        for (var sI = 0; sI <= seamCount; sI++) {
+          var seamX = W - PAD - 24 + BAM_COL_ADV / 2 - sI * BAM_COL_ADV;
+          if (seamX > PAD - 20 && seamX < W - PAD + 20) {
+            ctx.fillRect(seamX, gTopS - 14, 2, bGroupH2 + 28);
+          }
+        }
+      }
+    }
+
+    // divider
+    var divY = titleTop + titleH + 20;
+    ctx.fillStyle = bgp.dark ? "rgba(255,255,255,0.14)" : "#e3e6ea";
+    ctx.fillRect(PAD, divY, maxW, 2);
+
+    // title
+    ctx.font = "30px " + font.family;
+    ctx.fillStyle = bgp.sub;
+    for (var t = 0; t < titleLines.length; t++) {
+      ctx.fillText(titleLines[t], PAD, titleTop + t * 44);
+    }
+
+    // footer: QR right, hint left
+    var qrSize = 200;
+    var qrY = divY + 60;
+    if (bgp.dark) {
+      // white backing so the QR stays scannable on dark backgrounds
+      ctx.fillStyle = "#ffffff";
+      roundRectPath(ctx, W - PAD - qrSize - 12, qrY - 12, qrSize + 24, qrSize + 24, 10);
+      ctx.fill();
+    }
+    drawQrcode(ctx, link, W - PAD - qrSize, qrY, qrSize);
+
+    ctx.font = "28px " + font.family;
+    ctx.fillStyle = bgp.text;
+    ctx.fillText("扫码查看这段原文", PAD, qrY + 44);
+    ctx.font = "22px " + font.family;
+    ctx.fillStyle = bgp.sub;
+    ctx.fillText("长按识别二维码 · 定位到文章原位置", PAD, qrY + 92);
+
+    // centered @host footer (from the current site, never hardcoded)
+    ctx.font = "24px " + font.family;
+    ctx.fillStyle = bgp.sub;
+    var host = "@" + window.location.hostname;
+    ctx.fillText(host, (W - ctx.measureText(host).width) / 2, qrY + qrSize + 26);
+
+    return canvas;
+  }
+
+  function openSharePanel(section, anchor, pos) {
+    var existing = document.querySelector(".bh-share-panel");
+    if (existing) existing.remove();
+
+    var link = buildPassageLink(pos);
+    var title = getPostTitle();
+    var siteName = document.querySelector(".site-title, .site-name") ?
+      document.querySelector(".site-title, .site-name").textContent.trim() : window.location.hostname;
+
+    var opts = loadShareOpts();
+
+    function optRowHTML(label, map, key) {
+      var html = '<div class="bh-share-opt-row"><span class="bh-share-opt-label">' + label + '</span>';
+      for (var k in map) {
+        if (key === "font" && k !== "sans" &&
+            !shareFontAvailable(shareFontProbeName(map[k].family))) {
+          continue; // device cannot render this font — hide the option entirely
+        }
+        html += '<button type="button" class="bh-share-opt-chip' + (opts[key] === k ? ' bh-opt-active' : '') +
+          '" data-key="' + key + '" data-val="' + k + '">' + map[k].label + '</button>';
+      }
+      return html + '</div>';
+    }
+
+    var panel = document.createElement("div");
+    panel.className = "bh-share-panel";
+    panel.innerHTML =
+      '<div class="bh-share-card">' +
+        '<div class="bh-share-opts">' +
+          optRowHTML("主题", SHARE_STYLES, "theme") +
+          optRowHTML("字体", SHARE_FONTS, "font") +
+          optRowHTML("背景", SHARE_BGS, "bg") +
+        '</div>' +
+        '<div class="bh-share-loading"><span class="bh-overlay-spinner"></span> 生成卡片中...</div>' +
+        '<div class="bh-share-img-wrap" style="display:none"></div>' +
+        '<div class="bh-share-actions">' +
+          '<button type="button" class="bh-share-copy-link">复制链接</button>' +
+          '<button type="button" class="bh-share-copy-img">复制图片</button>' +
+          '<button type="button" class="bh-share-download">保存图片</button>' +
+          '<button type="button" class="bh-share-native" style="display:none">分享</button>' +
+          '<button type="button" class="bh-share-cancel">关闭</button>' +
+        '</div>' +
+        '<div class="bh-share-msg"></div>' +
+      '</div>';
+    document.body.appendChild(panel);
+
+    function closePanel() {
+      document.removeEventListener("keydown", onPanelKeydown);
+      panel.remove();
+    }
+    var onPanelKeydown = function (e) { if (e.key === "Escape") closePanel(); };
+    document.addEventListener("keydown", onPanelKeydown);
+    panel.addEventListener("click", function (e) {
+      if (e.target === panel) closePanel();
+    });
+    panel.querySelector(".bh-share-cancel").addEventListener("click", closePanel);
+    panel.querySelector(".bh-share-copy-link").addEventListener("click", function () {
+      copyToClipboard(link).then(function (ok) {
+        var msg = panel.querySelector(".bh-share-msg");
+        msg.style.color = ok ? "#28a745" : "#c00";
+        msg.textContent = ok ? "链接已复制" : "复制失败";
+        setTimeout(function () { msg.textContent = ""; }, 2000);
+      });
+    });
+
+    var canvas = null;
+    function renderCard() {
+      // A persisted font choice may be unavailable on this device — fall back.
+      if (opts.font !== "sans" && !shareFontAvailable(shareFontProbeName(SHARE_FONTS[opts.font].family))) {
+        opts.font = "sans";
+      }
+      try {
+        canvas = renderShareCard(anchor.exact, title, link, siteName, opts);
+      } catch (e) {
+        panel.querySelector(".bh-share-loading").innerHTML = "卡片生成失败：" + (e.message || e);
+        return;
+      }
+      panel.querySelector(".bh-share-loading").style.display = "none";
+      var wrap = panel.querySelector(".bh-share-img-wrap");
+      wrap.style.display = "";
+      var img = wrap.querySelector("img");
+      if (!img) {
+        img = document.createElement("img");
+        img.alt = "分享卡片";
+        wrap.appendChild(img);
+      }
+      img.src = canvas.toDataURL("image/png");
+    }
+
+    // option chips: switch style and re-render
+    panel.querySelector(".bh-share-opts").addEventListener("click", function (e) {
+      var chip = e.target && e.target.closest ? e.target.closest(".bh-share-opt-chip") : null;
+      if (!chip || chip.classList.contains("bh-opt-disabled")) return;
+      var key = chip.getAttribute("data-key");
+      var val = chip.getAttribute("data-val");
+      if (opts[key] === val) return;
+      opts[key] = val;
+      saveShareOpts(opts);
+      var row = chip.parentNode;
+      var chips = row.querySelectorAll(".bh-share-opt-chip");
+      for (var i = 0; i < chips.length; i++) chips[i].classList.remove("bh-opt-active");
+      chip.classList.add("bh-opt-active");
+      renderCard();
+    });
+
+    loadQrcode(function () {
+      renderCard();
+
+      // copy image to clipboard
+      var copyImgBtn = panel.querySelector(".bh-share-copy-img");
+      if (!(navigator.clipboard && navigator.clipboard.write && window.ClipboardItem)) {
+        copyImgBtn.style.display = "none";
+      } else {
+        copyImgBtn.addEventListener("click", function () {
+          canvas.toBlob(function (blob) {
+            if (!blob) return;
+            var msg = panel.querySelector(".bh-share-msg");
+            navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]).then(function () {
+              msg.style.color = "#28a745";
+              msg.textContent = "图片已复制，可直接粘贴";
+            }, function () {
+              msg.style.color = "#c00";
+              msg.textContent = "复制失败，请使用「保存图片」";
+            });
+            setTimeout(function () { msg.textContent = ""; }, 2500);
+          }, "image/png");
+        });
+      }
+
+      // download
+      panel.querySelector(".bh-share-download").addEventListener("click", function () {
+        canvas.toBlob(function (blob) {
+          if (!blob) return;
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = (title || "quote").slice(0, 30).replace(/[\\/:*?"<>|]/g, "") + "-片段.png";
+          a.click();
+          setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+        }, "image/png");
+      });
+
+      // native share (mobile): share the image file directly
+      var nativeBtn = panel.querySelector(".bh-share-native");
+      if (navigator.share && navigator.canShare) {
+        canvas.toBlob(function (blob) {
+          if (!blob) return;
+          var file = new File([blob], "quote.png", { type: "image/png" });
+          if (navigator.canShare({ files: [file] })) {
+            nativeBtn.style.display = "";
+            nativeBtn.addEventListener("click", function () {
+              navigator.share({ files: [file], title: title, text: "「" + anchor.exact.slice(0, 50) + "」" }).catch(function () {});
+            });
+          }
+        }, "image/png");
+      }
+    });
+  }
+
+  // Deep link: #bh-{start}-{end} positions to a passage. If the passage has
+  // comments, the painted highlight carries that id; otherwise a temporary
+  // highlight is painted from the offsets. Used by copied links and share-card
+  // QR codes.
+  function handleDeepLink(section) {
+    if (section._bhDeepLinked) return;
+    var m = /^#bh-(\d+)-(\d+)$/.exec(window.location.hash);
+    if (!m) return;
+    var start = parseInt(m[1], 10);
+    var end = parseInt(m[2], 10);
+    var el = document.getElementById("bh-" + start + "-" + end);
+    if (!el) {
+      var inline = section._bhInline;
+      if (!inline || !inline.content) return;
+      var r = rangeFromOffsets(inline.content, start, end);
+      if (!r) return;
+      var marks = wrapRangeMarks(r);
+      if (!marks.length) return;
+      marks[0].id = "bh-" + start + "-" + end;
+      el = marks[0];
+    }
+    section._bhDeepLinked = true;
+    // Expand collapsed ancestors (<details>) so the passage becomes visible
+    for (var anc = el.parentElement; anc; anc = anc.parentElement) {
+      if (anc.tagName === "DETAILS" && !anc.open) anc.open = true;
+    }
+    setTimeout(function () {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.remove("bh-hl-flash");
+      void el.offsetWidth;
+      el.classList.add("bh-hl-flash");
+      setTimeout(function () { el.classList.remove("bh-hl-flash"); }, 3000);
+    }, 300);
+  }
+
+  // --- Anchor popover ---
+
+  function closeAnchorPopover(section) {
+    var pop = section._bhPop;
+    if (!pop) return;
+    // Return the (possibly moved) comment form to the comment section
+    var form = section._bhFormEl;
+    if (form && pop.contains(form)) {
+      var trigger = section.querySelector(".bh-comment-form-trigger");
+      section.insertBefore(form, trigger ? trigger.nextSibling : null);
+      form.style.display = "none";
+    }
+    if (pop._bhCleanup) {
+      for (var i = 0; i < pop._bhCleanup.length; i++) pop._bhCleanup[i]();
+    }
+    if (pop.parentNode) pop.parentNode.removeChild(pop);
+    section._bhPop = null;
+    removePendingMarks(section);
+    // Clear any pending inline anchor so the bottom form doesn't inherit it
+    if (section._bhState) {
+      section._bhState.anchor = null;
+      section._bhState.replyTo = null;
+    }
+  }
+
+  // Paint a dashed "pending" underline on a passage whose comment form is open
+  // (instant feedback before the comment is submitted).
+  function paintPendingMarks(section, pos) {
+    removePendingMarks(section);
+    var inline = section._bhInline;
+    if (!inline || !inline.content || !pos) return;
+    var r = rangeFromOffsets(inline.content, pos.start, pos.end);
+    if (!r) return;
+    var marks = wrapRangeMarks(r);
+    for (var i = 0; i < marks.length; i++) {
+      marks[i].classList.add("bh-hl-pending");
+      marks[i].id = "bh-p-" + pos.start + "-" + pos.end;
+    }
+    section._bhPendingMarks = marks;
+  }
+
+  function removePendingMarks(section) {
+    var marks = section._bhPendingMarks;
+    if (!marks) return;
+    section._bhPendingMarks = null;
+    for (var i = 0; i < marks.length; i++) {
+      var m = marks[i];
+      var parent = m.parentNode;
+      if (!parent) continue;
+      while (m.firstChild) parent.insertBefore(m.firstChild, m);
+      parent.removeChild(m);
+    }
+    if (section._bhInline && section._bhInline.content) section._bhInline.content.normalize();
+  }
+
+  function openAnchorPopover(section, state, config, slug, info) {
+    closeAnchorPopover(section);
+    var inline = section._bhInline;
+    if (!inline || !inline.content) return;
+    var container = inline.content;
+    var anchor = info.anchor;
+    var pos = info.pos || (anchor ? resolveAnchor(anchor, container) : null);
+    if (!anchor) return;
+
+    var pop = document.createElement("div");
+    pop.className = "bh-anchor-popover";
+    pop.innerHTML =
+      '<div class="bh-anchor-popover-inner">' +
+        '<button class="bh-anchor-close" type="button" title="关闭">✕</button>' +
+        '<div class="bh-anchor-comments"></div>' +
+        '<div class="bh-anchor-actions">' +
+          '<button class="bh-anchor-share" type="button" title="生成分享卡片">📤 转发</button>' +
+          '<button class="bh-anchor-write" type="button">💬 评论这段</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(pop);
+    section._bhPop = pop;
+
+    function rectFn() {
+      if (info.mark && info.mark.parentNode) return info.mark.getBoundingClientRect();
+      if (pos) {
+        var r = rangeFromOffsets(container, pos.start, pos.end);
+        if (r) return r.getBoundingClientRect();
+      }
+      return { left: window.innerWidth / 2 - 160, top: window.innerHeight / 3, width: 0, bottom: window.innerHeight / 3 };
+    }
+
+    function position() {
+      var rect = rectFn();
+      pop.style.visibility = "hidden";
+      pop.style.display = "";
+      var pw = pop.offsetWidth, ph = pop.offsetHeight;
+      // Prefer below the passage, left-aligned to its start
+      var left = rect.left;
+      if (left + pw > window.innerWidth - 8) left = Math.max(8, rect.right - pw);
+      var top = rect.bottom + 10;
+      if (top + ph > window.innerHeight - 8) top = Math.max(8, rect.top - ph - 10);
+      pop.style.left = left + "px";
+      pop.style.top = top + "px";
+      pop.style.visibility = "";
+    }
+
+    function commentsAt() {
+      var res = [];
+      // Opened from an existing highlight: match by the mark's comment ids
+      // (covers comments merged in from overlapping passages). Read them live
+      // from the DOM so freshly posted comments appear without reopening.
+      var cids = info.cids;
+      if (info.markId) {
+        var liveMark = document.getElementById(info.markId);
+        if (liveMark) cids = (liveMark.getAttribute("data-cids") || "").split(",");
+      }
+      if (cids) {
+        for (var i = 0; i < state.comments.length; i++) {
+          if (cids.indexOf(String(state.comments[i].id)) !== -1) res.push(state.comments[i]);
+        }
+        return res;
+      }
+      if (!pos) return res;
+      for (var j = 0; j < state.comments.length; j++) {
+        var c = state.comments[j];
+        if (!c.anchor) continue;
+        var a = parseAnchor(c.anchor);
+        if (!a) continue;
+        var p = resolveAnchor(a, container);
+        if (p && p.start === pos.start && p.end === pos.end) res.push(c);
+      }
+      return res;
+    }
+
+    function refreshComments() {
+      var box = pop.querySelector(".bh-anchor-comments");
+      var list = commentsAt();
+      if (!list.length) {
+        box.innerHTML = '<div class="bh-no-comments" style="text-align:left;padding:4px 0">还没有这段的评论</div>';
+        return;
+      }
+      var commentMap = state._commentMap || {};
+      var html = "";
+      for (var i = 0; i < list.length; i++) html += renderCommentItem(list[i], commentMap, false);
+      box.innerHTML = html;
+      var btns = box.querySelectorAll(".bh-reply-btn");
+      for (var b = 0; b < btns.length; b++) {
+        btns[b].addEventListener("click", function () {
+          var id = parseInt(this.getAttribute("data-id"));
+          state.replyTo = commentMap[id] || null;
+          state.anchor = anchor; // replies inherit the passage anchor
+          showPopoverForm();
+        });
+      }
+    }
+
+    function showPopoverForm() {
+      var form = section._bhFormEl;
+      if (!form) return;
+      if (!pop.contains(form)) {
+        var actions = pop.querySelector(".bh-anchor-actions");
+        pop.querySelector(".bh-anchor-popover-inner").insertBefore(form, actions.nextSibling);
+      }
+      pop.querySelector(".bh-anchor-popover-inner").classList.add("bh-form-open");
+      paintPendingMarks(section, pos);
+      form.style.display = "";
+      renderCommentForm(section, state, config, slug, form);
+      position();
+      var ta = form.querySelector("textarea");
+      if (ta) ta.focus();
+    }
+
+    pop._bhOnPosted = function (newComment) {
+      removePendingMarks(section);
+      refreshComments();
+      if (section._bhRefreshInline) section._bhRefreshInline();
+      var form = section._bhFormEl;
+      if (form) form.style.display = "none";
+      if (newComment && newComment.status === "pending") {
+        var box = pop.querySelector(".bh-anchor-comments");
+        var notice = document.createElement("div");
+        notice.className = "bh-pending-notice";
+        notice.textContent = "评论已提交，等待审核后展示";
+        box.insertBefore(notice, box.firstChild);
+        setTimeout(function () { if (notice.parentNode) notice.parentNode.removeChild(notice); }, 5000);
+      }
+      position();
+    };
+
+    pop.querySelector(".bh-anchor-close").addEventListener("click", function () {
+      closeAnchorPopover(section);
+    });
+    pop.querySelector(".bh-anchor-write").addEventListener("click", function () {
+      state.replyTo = null;
+      state.anchor = anchor;
+      showPopoverForm();
+    });
+    pop.querySelector(".bh-anchor-share").addEventListener("click", function () {
+      closeAnchorPopover(section);
+      openSharePanel(section, anchor, pos);
+    });
+    refreshComments();
+    position();
+
+    // No comments on this passage yet: open the form directly (one click less)
+    if (commentsAt().length === 0) {
+      state.anchor = anchor;
+      showPopoverForm();
+    }
+
+    // Reposition on scroll/resize; close on Escape or outside click.
+    var onScroll = throttle(function () { position(); }, 100);
+    var onKeydown = function (e) { if (e.key === "Escape") closeAnchorPopover(section); };
+    var onDocMousedown = function (e) {
+      if (!pop.contains(e.target) && !(section._bhBubble && section._bhBubble.contains(e.target))) {
+        closeAnchorPopover(section);
+      }
+    };
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    document.addEventListener("keydown", onKeydown);
+    document.addEventListener("mousedown", onDocMousedown, true);
+    pop._bhCleanup = [
+      function () { window.removeEventListener("scroll", onScroll, true); },
+      function () { window.removeEventListener("resize", onScroll); },
+      function () { document.removeEventListener("keydown", onKeydown); },
+      function () { document.removeEventListener("mousedown", onDocMousedown, true); },
+    ];
+  }
+
+  function openAnchorPopoverByMark(mark, section, state, config, slug) {
+    var cids = (mark.getAttribute("data-cids") || "").split(",");
+    var first = null;
+    for (var i = 0; i < state.comments.length; i++) {
+      if (String(state.comments[i].id) === cids[0]) { first = state.comments[i]; break; }
+    }
+    if (!first) return;
+    var a = parseAnchor(first.anchor);
+    if (!a) return;
+    openAnchorPopover(section, state, config, slug, {
+      anchor: a,
+      pos: resolveAnchor(a, section._bhInline.content),
+      cids: cids,
+      mark: mark,
+      markId: mark.id,
+    });
+  }
+
+  // --- Selection bubble (multi-action menu: comment / copy / share) ---
+
+  function getPostTitle() {
+    var h1 = document.querySelector("h1");
+    return (h1 && h1.textContent.trim()) || document.title || "";
+  }
+
+  function buildPassageLink(pos) {
+    var clean = window.location.href.split("#")[0];
+    if (!pos) return clean;
+    return clean + "#bh-" + pos.start + "-" + pos.end;
+  }
+
+  function copyToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).then(function () { return true; }, function () { return legacyCopy(text); });
+    }
+    return Promise.resolve(legacyCopy(text));
+  }
+
+  function legacyCopy(text) {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;left:-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  function bhToast(msg) {
+    var t = document.querySelector(".bh-toast");
+    if (!t) {
+      t = document.createElement("div");
+      t.className = "bh-toast";
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.classList.add("bh-toast-show");
+    clearTimeout(t._bhTimer);
+    t._bhTimer = setTimeout(function () { t.classList.remove("bh-toast-show"); }, 2000);
+  }
+
+  function copyPassage(anchor, pos) {
+    var text = "「" + anchor.exact + "」\n—— " + getPostTitle() + "\n" + buildPassageLink(pos);
+    copyToClipboard(text).then(function (ok) {
+      bhToast(ok ? "已复制引用和链接" : "复制失败，请手动复制");
+    });
+  }
+
+  function initSelectionBubble(section, state, config, slug, container) {
+    var bubble = document.createElement("div");
+    bubble.className = "bh-select-bubble";
+    bubble.innerHTML =
+      '<button type="button" data-act="comment" title="评论这段">评论</button>' +
+      '<button type="button" data-act="copy" title="复制引用和链接">复制</button>' +
+      '<button type="button" data-act="share" title="生成分享卡片">转发</button>';
+    bubble.style.display = "none";
+    document.body.appendChild(bubble);
+    section._bhBubble = bubble;
+
+    var pending = null; // {range, anchor}
+
+    function hide() {
+      bubble.style.display = "none";
+      pending = null;
+    }
+
+    document.addEventListener("mouseup", function (e) {
+      if (bubble.contains(e.target)) return;
+      var mx = e.clientX, my = e.clientY;
+      setTimeout(function () {
+        var sel = window.getSelection();
+        if (!sel || sel.isCollapsed || !sel.rangeCount) return hide();
+        var text = sel.toString();
+        if (!text || text.trim().length < 2 || text.length > 1000) return hide();
+        var range = sel.getRangeAt(0);
+        var node = range.commonAncestorContainer;
+        var el = node.nodeType === 3 ? node.parentNode : node;
+        if (!container.contains(el)) return hide();
+        if (el.closest && el.closest("span.bh-hl")) return hide();
+        if (el.closest && el.closest(".bh-comments, .bh-anchor-popover, .bh-select-bubble, .bh-page-reactions, .bh-share-panel")) return hide();
+
+        pending = { range: range, anchor: buildAnchor(range, container) };
+        if (!pending.anchor) return hide();
+        // Follow the mouse position (where the user finished the selection)
+        bubble.style.display = "";
+        var bw = bubble.offsetWidth, bh = bubble.offsetHeight;
+        var left = Math.max(8, Math.min(mx - bw / 2, window.innerWidth - bw - 8));
+        var top = Math.max(8, my - bh - 12);
+        bubble.style.left = left + "px";
+        bubble.style.top = top + "px";
+      }, 10);
+    });
+
+    // Keep the selection alive when clicking the bubble
+    bubble.addEventListener("mousedown", function (e) { e.preventDefault(); });
+    bubble.addEventListener("click", function (e) {
+      var btn = e.target && e.target.closest ? e.target.closest("button[data-act]") : null;
+      if (!btn || !pending) return;
+      var act = btn.getAttribute("data-act");
+      var pos = resolveAnchor(pending.anchor, container);
+      if (act === "comment") {
+        var info = { anchor: pending.anchor };
+        if (pos) info.pos = pos;
+        hide();
+        var sel = window.getSelection();
+        if (sel) sel.removeAllRanges();
+        openAnchorPopover(section, state, config, slug, info);
+      } else if (act === "copy") {
+        copyPassage(pending.anchor, pos);
+        hide();
+        var sel2 = window.getSelection();
+        if (sel2) sel2.removeAllRanges();
+      } else if (act === "share") {
+        var anchor = pending.anchor;
+        hide();
+        var sel3 = window.getSelection();
+        if (sel3) sel3.removeAllRanges();
+        openSharePanel(section, anchor, pos);
+      }
+    });
+
+    document.addEventListener("selectionchange", function () {
+      var sel = window.getSelection();
+      if (!sel || sel.isCollapsed) hide();
+    });
+  }
+
+  function initInlineComments(section, state, config, slug) {
+    if (config.features.showInlineComments === false) return;
+    var container = document.querySelector(config.selectors.postContainer);
+    if (!container) return;
+
+    // Anchor into the prose content, not the whole post container: containers
+    // often hold async-rendered dynamic text (view counters, reaction bars)
+    // that shifts character offsets. Prefer the dedicated content element
+    // (MWaterBook/ThinkBook: .post-content), then the article element
+    // (md2site/ai-notes: .container > article), else the container itself.
+    var contentEl = container.querySelector(".post-content, .markdown-body") ||
+                    container.querySelector("article") ||
+                    container;
+
+    section._bhInline = { container: container, content: contentEl };
+    section._bhState = state;
+    section._bhConfig = config;
+    section._bhSlug = slug;
+    section._bhRefreshInline = function () { renderInlineHighlights(section, state); };
+
+    // Clicking a highlight opens the popover (bind once per container)
+    if (!container._bhHlBound) {
+      container._bhHlBound = true;
+      container.addEventListener("click", function (e) {
+        var hl = e.target && e.target.closest ? e.target.closest("span.bh-hl") : null;
+        if (!hl) return;
+        var sel = window.getSelection();
+        if (sel && !sel.isCollapsed) return; // user is selecting text
+        e.preventDefault();
+        e.stopPropagation();
+        var sec = this._bhSection;
+        if (sec) openAnchorPopoverByMark(hl, sec, sec._bhState, sec._bhConfig, sec._bhSlug);
+      });
+    }
+    container._bhSection = section;
+    container._bhState = state;
+    container._bhConfig = config;
+    container._bhSlug = slug;
+
+    initSelectionBubble(section, state, config, slug, contentEl);
+
+    // Deep-link fallback: pages with zero comments never re-render highlights,
+    // so try positioning once after init (also covered after comment loads).
+    setTimeout(function () { handleDeepLink(section); }, 600);
   }
 
   // ============================================================

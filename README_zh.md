@@ -21,6 +21,8 @@
 - **分析面板** — 密码保护的 Dashboard，含趋势图、来源、访客、原始访问记录、评论管理
 - **多站点** — 一个实例，N 个站点，`site_id` 自动从域名提取，数据完全隔离
 - **评论系统** — 邮箱身份认证，Markdown 支持，Emoji 表情回应，Cookie Token 持久化
+- **正文关联评论** — 选中任意段落即可针对性评论；被评论的段落高亮下划线展示，点击弹窗查看/回复，深链（`#bh-{start}-{end}`）直达原文位置
+- **分享卡片** — 一键生成引用卡片图（含二维码深链），5 种风格（默认/引用风/日历风/宁静风/竹简风）、5 种中文字体（设备不支持自动隐藏）、5 种背景色，支持复制图片/复制链接/系统分享
 - **文章表态** — 每篇文章独立的爱心按钮，不依赖评论模式
 - **零依赖 SDK** — JS + CSS + Markdown 库，自动识别页面类型，渲染统计数据
 - **优雅降级** — 后端宕机时博客正常工作，无 JS 报错
@@ -124,6 +126,11 @@ curl -X POST http://localhost:9001/api/v1/analytics/stats/batch \
   -H "Content-Type: application/json" \
   -d '{"site_id":"your-site.com","slugs":["/post-a","/post-b"]}'
 # → {"ok":true,"data":{"/post-a":{"pv":100,"uv":50},"/post-b":{"pv":200,"uv":80}}}
+
+# 发表正文关联评论 — anchor 为 JSON 字符串，可选
+curl -X POST http://localhost:9001/api/v1/comments/post \
+  -H "Content-Type: application/json" \
+  -d '{"page_slug":"/2024/01/hello","email":"a@b.com","nickname":"Alice","content":"这段写得很好","anchor":"{\"exact\":\"很好的一句话\",\"prefix\":\"...\",\"suffix\":\"...\",\"start\":10,\"end\":18}"}'
 ```
 
 错误格式：`{"ok":false,"error":{"code":"RATE_LIMITED","message":"Too many requests"}}`
@@ -151,6 +158,7 @@ window.BlogHelperConfig = {
     showPostStats: true,
     showPopular: true,
     showComments: "auto",   // true | "auto" | false
+    showInlineComments: true, // 正文关联评论 + 选中分享卡片
     popularLimit: 8,
     popularPeriod: "all",   // "7d", "30d", "all"
     popularPrefix: "",      // 只展示匹配此前缀的 slug
@@ -199,6 +207,27 @@ window.BlogHelperConfig = {
 **功能**：邮箱身份 + Cookie Token 持久化，嵌套回复，Markdown（写作/预览切换），Emoji 表情回应，个人资料编辑（博客地址、个性签名）。
 
 **站点级控制**：SDK `showComments` 选项 — `true`（始终开启）、`"auto"`（从后端检测，默认）、`false`（禁用）。文章爱心表态独立于评论模式，始终可用。
+
+### 正文关联评论（Inline Comments）
+
+在正文中选中任意文字 → 弹出菜单（评论 / 复制 / 转发）。以此方式发表的评论携带内容寻址锚点
+（W3C Web Annotation 风格 TextQuoteSelector）：
+
+```json
+{"exact": "被选中的原文", "prefix": "前 32 字符", "suffix": "后 32 字符", "start": 190, "end": 210}
+```
+
+- 存储于 `comments.anchor` 列（JSON 字符串，空 = 整页评论，**完全向后兼容**，老数据不受影响）
+- 恢复策略：优先按位置 + 原文校验，失败降级到 前缀+原文+后缀 全文搜索，再降级纯原文搜索 — 换主题、正文小改都能找回；找不到则优雅降级为仅引用展示
+- 高亮按文本节点分段绘制（任意选区不破坏排版）；新评论落笔时先画虚线下划线即时反馈
+- 深链：`page.html#bh-190-210` 打开后自动滚动到该段并闪烁（自动展开折叠的 `<details>` 祖先）
+- 重叠段落自动合并到同一处高亮；多条评论同段分组展示
+
+### 分享卡片（Share Cards）
+
+转发动作用 canvas 生成引用卡片：引用文字（按段落区分，长文自动变长图）+ 文章标题 + 二维码（深链，扫码
+定位到原文位置）+ 底部居中 `@{域名}`。风格/字体/背景在渲染时切换并持久化到 `localStorage`；当前设备
+不支持的字体直接隐藏选项（不做静默回退）。竹简风为传统竖排（右上起笔、从右往左）。
 
 **防机器人**：Proof-of-Work（SHA-256 前缀挑战）、频率限制（5 条/IP/分钟）、蜜罐字段。
 

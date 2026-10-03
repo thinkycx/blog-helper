@@ -172,3 +172,76 @@ a.bh-comment-author:hover { color: #333; }
 .bh-md-hint { font-size: 11px; color: #bbb; margin-top: 4px; }
 .bh-md-hint a { color: #bbb; text-decoration: none; }
 .bh-md-hint a:hover { color: #999; }
+
+/* ============================================================
+   Inline comments (text-anchored annotations)
+   ============================================================ */
+
+/* Highlighted passage in the article body */
+.bh-hl { background: rgba(255, 212, 0, 0.28); border-bottom: 2px solid rgba(240, 173, 0, 0.75); border-radius: 2px; cursor: pointer; transition: background 0.15s; }
+.bh-hl:hover { background: rgba(255, 212, 0, 0.5); }
+.bh-hl-pending { border-bottom-style: dashed; background: rgba(255, 212, 0, 0.12); }
+.bh-hl-flash { animation: bh-hl-flash 1.6s ease; }
+@keyframes bh-hl-flash { 0%, 60% { background: rgba(255, 160, 0, 0.65); } 100% { background: rgba(255, 212, 0, 0.28); } }
+
+/* Floating bubble shown when text is selected */
+.bh-select-bubble { position: fixed; z-index: 1100; background: #24292e; color: #fff; font-size: 13px; line-height: 1; padding: 8px 14px; border-radius: 16px; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,0.3); user-select: none; -webkit-user-select: none; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+.bh-select-bubble:hover { background: #3a4149; }
+
+/* Popover opened from a highlight or the selection bubble */
+.bh-anchor-popover { position: fixed; z-index: 1100; width: 420px; max-width: calc(100vw - 24px); background: #fff; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 6px 28px rgba(0,0,0,0.18); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; color: #333; }
+.bh-anchor-popover-inner { padding: 16px; position: relative; max-height: 65vh; overflow-y: auto; }
+.bh-anchor-close { position: absolute; top: 10px; right: 10px; background: none; border: none; color: #999; cursor: pointer; font-size: 14px; padding: 4px; }
+.bh-anchor-close:hover { color: #333; }
+.bh-anchor-comments .bh-comment-item { margin-bottom: 14px; }
+.bh-anchor-comments .bh-comment-item:last-child { margin-bottom: 4px; }
+.bh-anchor-actions { display: flex; gap: 10px; align-items: center; justify-content: flex-end; margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
+.bh-anchor-popover-inner.bh-form-open .bh-anchor-actions { display: none; }
+.bh-anchor-write { background: #24292e; color: #fff; border: none; padding: 6px 14px; border-radius: 5px; cursor: pointer; font-size: 13px; }
+.bh-anchor-write:hover { background: #3a4149; }
+.bh-anchor-jump { font-size: 12px; color: #586069; text-decoration: none; }
+.bh-anchor-jump:hover { color: #24292e; text-decoration: underline; }
+.bh-anchor-popover .bh-comment-form { margin-top: 12px; }
+
+/* Quote block shown in the bottom comment list for anchored comments */
+.bh-quote { font-size: 13px; color: #666; background: #fffbe6; border-left: 3px solid #f0ad4e; padding: 6px 10px; border-radius: 0 4px 4px 0; margin: 0 0 8px; cursor: pointer; }
+.bh-quote:hover { background: #fff3cd; }
+
+/* Selection bubble as multi-action menu */
+.bh-select-bubble { display: flex; align-items: center; gap: 0; padding: 0; }
+.bh-select-bubble button { background: none; border: none; color: #fff; font-size: 13px; line-height: 1; padding: 8px 12px; cursor: pointer; font-family: inherit; }
+.bh-select-bubble button:first-child { border-radius: 16px 0 0 16px; }
+.bh-select-bubble button:last-child { border-radius: 0 16px 16px 0; }
+.bh-select-bubble button + button { border-left: 1px solid rgba(255,255,255,0.25); }
+.bh-select-bubble button:hover { background: rgba(255,255,255,0.12); }
+
+/* Toast */
+.bh-toast { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%) translateY(10px); background: rgba(36,41,46,0.92); color: #fff; font-size: 13px; padding: 8px 18px; border-radius: 16px; z-index: 1200; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+.bh-toast-show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* Share panel (quote card with QR) */
+.bh-share-panel { position: fixed; inset: 0; z-index: 1100; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.45); animation: ba-fadein 0.2s ease; }
+.bh-share-card { background: #fff; border-radius: 12px; padding: 20px; max-width: 92vw; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.3); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+.bh-share-loading { color: #999; font-size: 14px; padding: 40px 60px; display: flex; align-items: center; gap: 8px; }
+.bh-share-img-wrap { overflow-y: auto; }
+.bh-share-img-wrap img { display: block; max-width: min(420px, 80vw); height: auto; border-radius: 6px; border: 1px solid #eee; }
+.bh-share-actions { display: flex; gap: 10px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
+.bh-share-actions button { border: 1px solid #ddd; background: #fff; color: #333; font-size: 13px; padding: 7px 16px; border-radius: 5px; cursor: pointer; transition: all 0.15s; font-family: inherit; }
+.bh-share-actions button:hover { border-color: #999; }
+.bh-share-msg { text-align: center; font-size: 12px; min-height: 16px; margin-top: 8px; }
+
+/* Anchor popover share button */
+.bh-anchor-share { background: none; border: 1px solid #ddd; color: #555; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-size: 13px; }
+.bh-anchor-share:hover { border-color: #999; color: #333; }
+
+/* Share card options toolbar */
+.bh-share-opts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.bh-share-opt-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bh-share-opt-label { font-size: 12px; color: #999; width: 32px; flex-shrink: 0; }
+.bh-share-opt-chip { border: 1px solid #ddd; background: #fff; color: #555; font-size: 12px; padding: 4px 12px; border-radius: 12px; cursor: pointer; transition: all 0.15s; font-family: inherit; }
+.bh-share-opt-chip:hover { border-color: #999; }
+.bh-share-opt-chip.bh-opt-active { background: #24292e; color: #fff; border-color: #24292e; }
+
+/* Disabled font chip (device lacks the font) */
+.bh-share-opt-chip.bh-opt-disabled { color: #c3c8cd; border-color: #eceef1; cursor: not-allowed; background: #fafbfc; }
+.bh-share-opt-chip.bh-opt-disabled:hover { border-color: #eceef1; }

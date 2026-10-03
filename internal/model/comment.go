@@ -46,6 +46,7 @@ type Comment struct {
 	CommenterID int64     `json:"commenter_id"`
 	ParentID    *int64    `json:"parent_id,omitempty"`
 	Content     string    `json:"content"`
+	Anchor      string    `json:"anchor"` // inline-comment anchor JSON ({exact,prefix,suffix,start,end}), empty = whole-page comment
 	Status      string    `json:"status"` // "pending", "approved", "rejected"
 	IP          string    `json:"ip,omitempty"`
 	UserAgent   string    `json:"user_agent,omitempty"`
@@ -61,6 +62,7 @@ type CommentWithAuthor struct {
 	PageTitle   string           `json:"page_title,omitempty"`
 	ParentID    *int64           `json:"parent_id,omitempty"`
 	Content     string           `json:"content"`
+	Anchor      string            `json:"anchor,omitempty"` // inline-comment anchor JSON, empty = whole-page comment
 	Status      string           `json:"status,omitempty"`
 	CreatedAt   string           `json:"created_at"`
 	Author      *CommenterPublic `json:"author"`

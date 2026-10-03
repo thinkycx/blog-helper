@@ -21,6 +21,8 @@ Lightweight analytics and comment system for static blogs — PV/UV tracking, po
 - **Analytics Dashboard** — password-protected, with trend charts, referrers, visitors, raw access logs, and comment management
 - **Multi-Site** — one instance, N sites, data isolated by `site_id` (auto-detected from hostname)
 - **Comment System** — email-based identity, Markdown support, emoji reactions, cookie token persistence
+- **Inline Comments** — select any passage to comment on it; anchored passages get a highlighted underline, click to view/reply in a popover, deep links (`#bh-{start}-{end}`) position back to the exact text
+- **Share Cards** — generate a quote card image (QR deep link included) with 5 styles (plain / quote / calendar / serene / bamboo), 5 CJK fonts (auto-hidden if the device lacks them), 5 background colors, copy image / copy link / native share
 - **Page Reactions** — per-article heart button, independent of comment mode
 - **Zero-Dependency SDK** — single JS file + CSS, auto-detects page type, renders stats into your theme
 - **Graceful Degradation** — backend down? Blog works normally, no JS errors
@@ -124,6 +126,11 @@ curl -X POST http://localhost:9001/api/v1/analytics/stats/batch \
   -H "Content-Type: application/json" \
   -d '{"site_id":"your-site.com","slugs":["/post-a","/post-b"]}'
 # → {"ok":true,"data":{"/post-a":{"pv":100,"uv":50},"/post-b":{"pv":200,"uv":80}}}
+
+# Post an inline (text-anchored) comment — anchor is a JSON string, optional
+curl -X POST http://localhost:9001/api/v1/comments/post \
+  -H "Content-Type: application/json" \
+  -d '{"page_slug":"/2024/01/hello","email":"a@b.com","nickname":"Alice","content":"great passage","anchor":"{\"exact\":\"a great sentence\",\"prefix\":\"...\",\"suffix\":\"...\",\"start\":10,\"end\":24}"}'
 ```
 
 Error format: `{"ok":false,"error":{"code":"RATE_LIMITED","message":"Too many requests"}}`
@@ -151,6 +158,7 @@ window.BlogHelperConfig = {
     showPostStats: true,
     showPopular: true,
     showComments: "auto",   // true | "auto" | false
+    showInlineComments: true, // text-anchored comments + share cards on selections
     popularLimit: 8,
     popularPeriod: "all",   // "7d", "30d", "all"
     popularPrefix: "",      // only show slugs with this prefix
@@ -199,6 +207,27 @@ Enable with `-comment-mode auto-approve` (or `moderation` for manual review).
 **Features**: email-based identity with cookie token, threaded replies, Markdown (Write/Preview tabs), emoji reactions on comments and pages, profile editing (blog URL, bio).
 
 **Per-site control**: SDK `showComments` option — `true` (always on), `"auto"` (detect from backend, default), `false` (disabled). Page reactions (heart) work independently regardless of comment mode.
+
+### Inline Comments (text-anchored)
+
+Select any passage in the article body → a menu appears (comment / copy / share). Comments posted this way carry a
+content-addressed anchor (W3C-Web-Annotation-style TextQuoteSelector):
+
+```json
+{"exact": "selected text", "prefix": "up to 32 chars before", "suffix": "up to 32 chars after", "start": 190, "end": 210}
+```
+
+- Stored in the `comments.anchor` column (JSON, empty = whole-page comment; backward compatible)
+- Resolution: position-first with exact-text verification, then prefix+exact+suffix search, then plain search — survives theme changes and small content edits; degrades to a quote-only comment if the passage is gone
+- Highlights are painted per text node (layout-safe for any selection), passages with no comments yet get an instant dashed underline while writing
+- Deep links: `page.html#bh-190-210` scrolls to the passage and flashes it (auto-expands collapsed `<details>` ancestors)
+
+### Share Cards
+
+The share action renders a canvas quote card: quote (paragraph-aware, grows into a long image) + post title + QR code
+of the deep link + centered `@{hostname}` footer. Style/font/background options are chosen at render time and persisted
+in `localStorage`. Fonts that the current device cannot render are hidden from the options instead of silently
+falling back.
 
 **Anti-bot**: Proof-of-Work (SHA-256 prefix challenge), rate limit (5 comments/IP/minute), honeypot field.
 

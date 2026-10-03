@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS comments (
     commenter_id  INTEGER NOT NULL,
     parent_id     INTEGER,
     content       TEXT    NOT NULL,
+    anchor        TEXT    NOT NULL DEFAULT '',
     status        TEXT    NOT NULL DEFAULT 'pending',
     ip            TEXT    NOT NULL DEFAULT '',
     user_agent    TEXT    NOT NULL DEFAULT '',
@@ -206,6 +207,10 @@ func migrateV1ToV2(db *sql.DB) {
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_pv_site_slug ON page_views(site_id, page_slug)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_pv_site_slug_fp ON page_views(site_id, page_slug, fingerprint)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_pv_site_created ON page_views(site_id, created_at)`)
+
+	// v2→v3: add anchor column to comments for inline (text-anchored) comments.
+	// Fails silently if the column already exists (fresh install).
+	db.Exec(`ALTER TABLE comments ADD COLUMN anchor TEXT NOT NULL DEFAULT ''`)
 }
 
 // RecordPageView inserts a page view event and updates all aggregate tables atomically.
@@ -1066,9 +1071,9 @@ func (s *SQLiteStore) UpdateLastSeen(ctx context.Context, commenterID int64) err
 func (s *SQLiteStore) CreateComment(ctx context.Context, c *model.Comment) (*model.Comment, error) {
 	now := time.Now().UTC().Format("2006-01-02 15:04:05")
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO comments (site_id, page_slug, commenter_id, parent_id, content, status, ip, user_agent, fingerprint, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.SiteID, c.PageSlug, c.CommenterID, c.ParentID, c.Content, c.Status,
+		INSERT INTO comments (site_id, page_slug, commenter_id, parent_id, content, anchor, status, ip, user_agent, fingerprint, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.SiteID, c.PageSlug, c.CommenterID, c.ParentID, c.Content, c.Anchor, c.Status,
 		c.IP, c.UserAgent, c.Fingerprint, now)
 	if err != nil {
 		return nil, fmt.Errorf("create comment: %w", err)
@@ -1081,7 +1086,7 @@ func (s *SQLiteStore) CreateComment(ctx context.Context, c *model.Comment) (*mod
 
 func (s *SQLiteStore) GetCommentsBySlug(ctx context.Context, siteID, slug string) ([]*model.CommentWithAuthor, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT c.id, c.page_slug, c.commenter_id, c.parent_id, c.content, c.created_at,
+		SELECT c.id, c.page_slug, c.commenter_id, c.parent_id, c.content, c.anchor, c.created_at,
 		       u.id, u.nickname, u.avatar_seed, u.blog_url, u.bio
 		FROM comments c
 		LEFT JOIN commenters u ON u.id = c.commenter_id
@@ -1099,7 +1104,7 @@ func (s *SQLiteStore) GetCommentsBySlug(ctx context.Context, siteID, slug string
 		var parentID sql.NullInt64
 		var authorID sql.NullInt64
 		var authorNickname, authorAvatar, authorBlog, authorBio sql.NullString
-		if err := rows.Scan(&cwa.ID, &cwa.PageSlug, &commenterID, &parentID, &cwa.Content, &cwa.CreatedAt,
+		if err := rows.Scan(&cwa.ID, &cwa.PageSlug, &commenterID, &parentID, &cwa.Content, &cwa.Anchor, &cwa.CreatedAt,
 			&authorID, &authorNickname, &authorAvatar, &authorBlog, &authorBio); err != nil {
 			return nil, fmt.Errorf("scan comment: %w", err)
 		}

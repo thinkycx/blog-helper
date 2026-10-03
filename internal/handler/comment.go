@@ -83,6 +83,7 @@ type postCommentRequest struct {
 	Bio         string `json:"bio"`
 	Content     string `json:"content"`
 	ParentID    *int64 `json:"parent_id"`
+	Anchor      string `json:"anchor"` // inline-comment anchor JSON, optional
 	Fingerprint string `json:"fingerprint"`
 	// Anti-bot: proof of work
 	Challenge string `json:"challenge"`
@@ -131,6 +132,7 @@ func (h *CommentHandler) HandlePostComment(w http.ResponseWriter, r *http.Reques
 		Bio:         req.Bio,
 		Content:     req.Content,
 		ParentID:    req.ParentID,
+		Anchor:      req.Anchor,
 		IP:          r.RemoteAddr,
 		UserAgent:   r.Header.Get("User-Agent"),
 		Fingerprint: req.Fingerprint,
@@ -138,6 +140,10 @@ func (h *CommentHandler) HandlePostComment(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		if strings.Contains(err.Error(), "rate limit") {
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMIT", err.Error())
+			return
+		}
+		if strings.Contains(err.Error(), "anchor") {
+			writeError(w, http.StatusBadRequest, "INVALID_ANCHOR", err.Error())
 			return
 		}
 		if strings.Contains(err.Error(), "required") {

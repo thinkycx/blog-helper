@@ -222,7 +222,7 @@ a.bh-comment-author:hover { color: #333; }
 /* Share panel (quote card with QR) */
 .bh-share-panel { position: fixed; inset: 0; z-index: 1100; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.45); animation: ba-fadein 0.2s ease; }
 .bh-share-card { background: #fff; border-radius: 12px; padding: 20px; max-width: 92vw; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.3); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
-.bh-share-loading { color: #999; font-size: 14px; padding: 40px 60px; display: flex; align-items: center; gap: 8px; }
+.bh-share-loading { color: #999; font-size: 14px; padding: 40px 60px; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .bh-share-img-wrap { overflow-y: auto; }
 .bh-share-img-wrap img { display: block; max-width: min(420px, 80vw); height: auto; border-radius: 6px; border: 1px solid #eee; }
 .bh-share-actions { display: flex; gap: 10px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }

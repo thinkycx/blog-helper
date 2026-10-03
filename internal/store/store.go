@@ -98,6 +98,9 @@ type Store interface {
 	// GetPendingComments returns comments awaiting moderation.
 	GetPendingComments(ctx context.Context, siteID string) ([]*model.CommentWithAuthor, error)
 
+	// UpdateCommentContent edits a comment's content + status, owner-checked.
+	UpdateCommentContent(ctx context.Context, id, commenterID int64, content, status string) (*model.Comment, error)
+
 	// UpdateCommentStatus sets a comment's status (approved, rejected).
 	UpdateCommentStatus(ctx context.Context, id int64, status string) error
 

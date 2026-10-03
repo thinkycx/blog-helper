@@ -245,3 +245,16 @@ a.bh-comment-author:hover { color: #333; }
 /* Disabled font chip (device lacks the font) */
 .bh-share-opt-chip.bh-opt-disabled { color: #c3c8cd; border-color: #eceef1; cursor: not-allowed; background: #fafbfc; }
 .bh-share-opt-chip.bh-opt-disabled:hover { border-color: #eceef1; }
+
+/* Inline comment editor (own comments) */
+.bh-edit-area { margin-top: 4px; }
+.bh-edit-text { width: 100%; min-height: 72px; padding: 8px 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 14px; font-family: inherit; box-sizing: border-box; resize: vertical; }
+.bh-edit-actions { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+.bh-edit-save { background: #24292e; color: #fff; border: none; padding: 5px 14px; border-radius: 5px; cursor: pointer; font-size: 13px; font-family: inherit; }
+.bh-edit-save:hover { background: #3a4149; }
+.bh-edit-save:disabled { opacity: .6; cursor: default; }
+.bh-edit-cancel { background: none; border: 1px solid #ddd; color: #555; padding: 5px 14px; border-radius: 5px; cursor: pointer; font-size: 13px; font-family: inherit; }
+.bh-edit-cancel:hover { border-color: #999; }
+.bh-edit-msg { font-size: 12px; color: #c00; }
+.bh-edit-btn { background: none; border: none; color: #999; font-size: 13px; cursor: pointer; padding: 2px 4px; font-family: inherit; }
+.bh-edit-btn:hover { color: #333; text-decoration: underline; }

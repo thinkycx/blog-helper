@@ -162,6 +162,46 @@ func (h *CommentHandler) HandlePostComment(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: resp})
 }
 
+// updateCommentRequest is the JSON body for POST /api/v1/comments/update.
+type updateCommentRequest struct {
+	ID      int64  `json:"id"`
+	Content string `json:"content"`
+}
+
+// HandleUpdateComment handles POST /api/v1/comments/update (author only).
+func (h *CommentHandler) HandleUpdateComment(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Only POST is allowed")
+		return
+	}
+
+	var req updateCommentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid request body")
+		return
+	}
+	if req.ID <= 0 {
+		writeError(w, http.StatusBadRequest, "MISSING_FIELD", "id is required")
+		return
+	}
+
+	comment, err := h.svc.UpdateComment(r.Context(), getCommenterToken(r), req.ID, req.Content, r.RemoteAddr)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found or not yours") || strings.Contains(err.Error(), "invalid token") {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", err.Error())
+			return
+		}
+		if strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "too long") {
+			writeError(w, http.StatusBadRequest, "INVALID_CONTENT", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: comment})
+}
+
 // HandleLookupCommenter handles GET /api/v1/commenter/lookup?email=
 func (h *CommentHandler) HandleLookupCommenter(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

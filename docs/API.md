@@ -24,6 +24,7 @@ Authentication: dashboard endpoints require a session cookie (login at `/api/v1/
 | `POST` | `/comments/post` | Post a comment (PoW required). Optional `anchor` field (JSON string) turns it into an inline comment — see [Inline Comment Anchor](#inline-comment-anchor) |
 | `POST` | `/comments/count` | Batch comment counts |
 | `GET` | `/comments/challenge?site_id=...` | Get PoW challenge |
+| `POST` | `/comments/update` | Edit a comment (`{"id":..,"content":".."}`) — author only, cookie token required; moderation mode sends it back to pending |
 | `POST` | `/comments/react` | React (emoji) to a comment |
 | `GET` | `/comments/recent?site_id=...&limit=5` | Recent comments (sidebar) |
 | `GET` | `/comments/hot?site_id=...&limit=5` | Hot comments by reaction count |

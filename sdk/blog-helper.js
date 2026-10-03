@@ -717,6 +717,17 @@
       .catch(function () { return null; });
   }
 
+  function apiUpdateComment(config, id, content) {
+    var base = commentApiBase(config);
+    return fetch(base + "/comments/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ id: id, content: content }),
+    }).then(function (r) { return r.json(); })
+      .catch(function () { return { ok: false, error: { message: "Network error" } }; });
+  }
+
   function apiPostComment(config, body) {
     var base = commentApiBase(config);
     return fetch(base + "/comments/post", {
@@ -1140,6 +1151,7 @@
 
     var isAdmin = a.id === 0;
     var adminBadge = isAdmin ? '<span class="bh-admin-badge">Author</span>' : '';
+    var canEdit = !isAdmin && commentMap._me && a.id === commentMap._me.id;
     var authorName = blogUrl ?
       '<a class="bh-comment-author" href="' + escapeHtml(blogUrl) + '" target="_blank" rel="noopener">' + escapeHtml(a.nickname || "匿名") + '</a>' + adminBadge :
       '<span class="bh-comment-author">' + escapeHtml(a.nickname || "匿名") + '</span>' + adminBadge;
@@ -1181,6 +1193,7 @@
         '<div class="bh-comment-actions">' +
           renderReactionButtons(c) +
           '<button class="bh-reply-btn" data-id="' + c.id + '">回复</button>' +
+          (canEdit ? '<button class="bh-edit-btn" data-id="' + c.id + '">编辑</button>' : '') +
         '</div>' +
       '</div>' +
     '</div>';
@@ -1222,7 +1235,9 @@
       }
     }
 
-    // Store commentMap on state for reply button access
+    // Store commentMap on state for reply button access (plus current user,
+    // consumed by renderCommentItem to decide whether to show the edit button)
+    commentMap._me = state.me || null;
     state._commentMap = commentMap;
 
     var html = "";
@@ -1249,6 +1264,15 @@
         var id = parseInt(this.getAttribute("data-id"));
         state.replyTo = commentMap[id] || null;
         showCommentForm(section, state, config);
+      });
+    }
+
+    // Bind edit buttons (own comments only)
+    var ebtns = list.querySelectorAll(".bh-edit-btn");
+    for (var ei = 0; ei < ebtns.length; ei++) {
+      ebtns[ei].addEventListener("click", function () {
+        var id = parseInt(this.getAttribute("data-id"));
+        startCommentEdit(section, state, config, id, list);
       });
     }
 
@@ -1354,6 +1378,60 @@
 
     // Refresh inline highlights (comments may have changed)
     if (section._bhRefreshInline) section._bhRefreshInline();
+  }
+
+  // Inline editor for one's own comment: swaps the rendered content for a
+  // textarea (Markdown), saves via /comments/update, then re-renders the list.
+  function startCommentEdit(section, state, config, commentID, scope) {
+    var item = (scope || document).querySelector('.bh-comment-item[data-id="' + commentID + '"]');
+    if (!item || item.querySelector(".bh-edit-area")) return;
+    var comment = (state._commentMap || {})[commentID];
+    if (!comment) return;
+
+    var contentEl = item.querySelector(".bh-comment-content");
+    var original = comment.content || "";
+    var editor = document.createElement("div");
+    editor.className = "bh-edit-area";
+    editor.innerHTML =
+      '<textarea class="bh-edit-text" maxlength="1024">' + escapeHtml(original) + '</textarea>' +
+      '<div class="bh-edit-actions">' +
+        '<button type="button" class="bh-edit-save">保存</button>' +
+        '<button type="button" class="bh-edit-cancel">取消</button>' +
+        '<span class="bh-edit-msg"></span>' +
+      '</div>';
+    contentEl.style.display = "none";
+    contentEl.parentNode.insertBefore(editor, contentEl.nextSibling);
+
+    editor.querySelector(".bh-edit-cancel").addEventListener("click", function () {
+      editor.remove();
+      contentEl.style.display = "";
+    });
+    editor.querySelector(".bh-edit-save").addEventListener("click", function () {
+      var ta = editor.querySelector(".bh-edit-text");
+      var msg = editor.querySelector(".bh-edit-msg");
+      var content = ta.value.trim();
+      if (!content) { msg.textContent = "内容不能为空"; return; }
+      if (content.length > 1024) { msg.textContent = "不能超过 1024 字符"; return; }
+      var saveBtn = this;
+      saveBtn.disabled = true;
+      apiUpdateComment(config, commentID, content).then(function (resp) {
+        saveBtn.disabled = false;
+        if (!resp.ok) {
+          msg.textContent = (resp.error && resp.error.message) || "保存失败";
+          return;
+        }
+        // update local state and re-render
+        comment.content = content;
+        comment.status = (resp.data && resp.data.status) || comment.status;
+        if (comment.status !== "approved") {
+          // moderation mode: edited comment back to pending — drop from live list
+          var idx = state.comments.indexOf(comment);
+          if (idx !== -1) state.comments.splice(idx, 1);
+        }
+        renderCommentList(section, state, config);
+      });
+    });
+    editor.querySelector(".bh-edit-text").focus();
   }
 
   function renderCommentForm(section, state, config, slug, mountOverride) {
@@ -2865,6 +2943,13 @@
           state.replyTo = commentMap[id] || null;
           state.anchor = anchor; // replies inherit the passage anchor
           showPopoverForm();
+        });
+      }
+      var ebtns = box.querySelectorAll(".bh-edit-btn");
+      for (var eb = 0; eb < ebtns.length; eb++) {
+        ebtns[eb].addEventListener("click", function () {
+          var id = parseInt(this.getAttribute("data-id"));
+          startCommentEdit(section, state, config, id, box);
         });
       }
     }

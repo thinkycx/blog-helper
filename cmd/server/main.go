@@ -82,6 +82,7 @@ func main() {
 		mux.HandleFunc("/api/v1/comments/count", commentHandler.HandleCommentCounts)
 		mux.HandleFunc("/api/v1/comments/challenge", commentHandler.HandleGetChallenge)
 		mux.HandleFunc("/api/v1/comments/react", commentHandler.HandleReact)
+		mux.HandleFunc("/api/v1/comments/update", commentHandler.HandleUpdateComment)
 		mux.HandleFunc("/api/v1/comments/recent", commentHandler.HandleRecentComments)
 		mux.HandleFunc("/api/v1/comments/hot", commentHandler.HandleHotComments)
 		mux.HandleFunc("/api/v1/commenter/lookup", commentHandler.HandleLookupCommenter)

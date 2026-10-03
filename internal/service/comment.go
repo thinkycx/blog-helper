@@ -337,6 +337,58 @@ func (s *CommentService) UpdateProfile(ctx context.Context, token, nickname, ava
 	}, nil
 }
 
+// UpdateComment edits a comment's content. Only the author (via cookie token)
+// may edit; in moderation mode the edited comment goes back to pending review.
+func (s *CommentService) UpdateComment(ctx context.Context, token string, commentID int64, content string, ip string) (*model.CommentWithAuthor, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, fmt.Errorf("content is required")
+	}
+	if len(content) > 1024 {
+		return nil, fmt.Errorf("content too long (max 1024)")
+	}
+	if token == "" {
+		return nil, fmt.Errorf("invalid token")
+	}
+
+	commenter, err := s.store.GetCommenterByToken(ctx, token)
+	if err != nil {
+		return nil, fmt.Errorf("lookup token: %w", err)
+	}
+	if commenter == nil {
+		return nil, fmt.Errorf("invalid token")
+	}
+
+	// Edited comments return to pending in moderation mode; auto-approve keeps them live
+	status := "approved"
+	if s.commentMode == "moderation" {
+		status = "pending"
+	}
+
+	comment, err := s.store.UpdateCommentContent(ctx, commentID, commenter.ID, content, status)
+	if err != nil {
+		return nil, err
+	}
+	if comment == nil {
+		return nil, fmt.Errorf("comment not found or not yours")
+	}
+
+	_ = ip
+	return &model.CommentWithAuthor{
+		ID:        comment.ID,
+		SiteID:    comment.SiteID,
+		PageSlug:  comment.PageSlug,
+		Content:   comment.Content,
+		Anchor:    comment.Anchor,
+		Status:    comment.Status,
+		CreatedAt: comment.CreatedAt.Format("2006-01-02 15:04:05"),
+		Author: &model.CommenterPublic{
+			ID: commenter.ID, Nickname: commenter.Nickname,
+			AvatarSeed: commenter.Nickname, BlogURL: commenter.BlogURL, Bio: commenter.Bio,
+		},
+	}, nil
+}
+
 // GetPendingComments returns comments awaiting moderation (admin only).
 func (s *CommentService) GetPendingComments(ctx context.Context, siteID string) ([]*model.CommentWithAuthor, error) {
 	return s.store.GetPendingComments(ctx, normalizeSiteID(siteID))

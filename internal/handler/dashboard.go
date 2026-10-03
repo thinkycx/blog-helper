@@ -109,6 +109,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
   border-bottom:2px solid var(--border);font-size:10px;text-transform:uppercase;letter-spacing:0.04em;
   position:sticky;top:0;background:var(--card);white-space:nowrap}
 .tbl td{padding:7px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+    .who{position:relative;cursor:default;display:inline-block}
+    .who:hover .who-card{display:block}
+    .who-card{display:none;position:absolute;z-index:50;left:0;top:110%;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.14);padding:10px 14px;min-width:200px;font-size:12px;font-weight:400;white-space:nowrap}
+    .who-l{padding:2px 0;color:#444}
+    .who-l a{color:var(--accent)}
+    .who-l b{font-size:13px}
 .tbl tr:last-child td{border-bottom:none}
 .tbl tr:hover td{background:var(--hover)}
 .tbl a{color:var(--accent);text-decoration:none;font-weight:500}.tbl a:hover{text-decoration:underline;color:var(--accent)}
@@ -681,7 +687,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Robot
     var out='<div class="tbl-w"><table class="tbl"><tr><th>Author</th><th style="width:320px">Content</th><th style="max-width:120px">Page</th><th>IP</th><th>FP</th>'+(hasUA?'<th>UA</th>':'')+'<th>Status</th><th>Time</th><th>Actions</th></tr>';
     for(var i=0;i<comments.length;i++){var c=comments[i];
       var author=c.author?h(c.author.nickname):"Unknown";
-      if(c.author&&c.author.id===0)author='<span style="color:var(--accent);font-weight:600">'+h(c.author.nickname)+'</span>';
+      if(c.author&&c.author.id===0){
+        author='<span style="color:var(--accent);font-weight:600">'+h(c.author.nickname)+'</span>';
+      }else if(c.author){
+        // hover card: full commenter details (email, blog, bio, id)
+        var lines='<div class="who-l"><b>'+h(c.author.nickname)+'</b></div>'+
+          '<div class="who-l">ID: '+c.author.id+'</div>'+
+          (c.author.email?'<div class="who-l">✉ '+h(c.author.email)+'</div>':'')+
+          (c.author.blog_url?'<div class="who-l">🔗 <a href="'+h(c.author.blog_url)+'" target="_blank" rel="noopener">'+h(c.author.blog_url)+'</a></div>':'')+
+          (c.author.bio?'<div class="who-l">'+h(cut(c.author.bio,60))+'</div>':'');
+        author='<span class="who">'+h(c.author.nickname)+'<div class="who-card">'+lines+'</div></span>';
+      }
       var status=c.status||"approved";
       var stClass=status==="approved"?"color:var(--accent2)":status==="pending"?"color:orange":"color:var(--error)";
       var pageLabel=c.page_title?h(cut(c.page_title,20)):h(cut(c.page_slug,20));

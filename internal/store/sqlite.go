@@ -1186,7 +1186,7 @@ func (s *SQLiteStore) GetAllComments(ctx context.Context, siteID string, limit, 
 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.id, c.site_id, c.page_slug, c.commenter_id, c.parent_id, c.content, c.status, c.ip, c.user_agent, c.fingerprint, c.created_at,
-		       u.id, u.nickname, u.avatar_seed, u.blog_url, u.bio,
+		       u.id, u.nickname, u.avatar_seed, u.blog_url, u.bio, u.email,
 		       COALESCE(ps.page_title, '')
 		FROM comments c
 		LEFT JOIN commenters u ON u.id = c.commenter_id
@@ -1205,10 +1205,10 @@ func (s *SQLiteStore) GetAllComments(ctx context.Context, siteID string, limit, 
 		var commenterID int64
 		var parentID sql.NullInt64
 		var authorID sql.NullInt64
-		var authorNickname, authorAvatar, authorBlog, authorBio sql.NullString
+		var authorNickname, authorAvatar, authorBlog, authorBio, authorEmail sql.NullString
 		if err := rows.Scan(&cwa.ID, &cwa.SiteID, &cwa.PageSlug, &commenterID, &parentID, &cwa.Content, &cwa.Status,
 			&cwa.IP, &cwa.UserAgent, &cwa.Fingerprint, &cwa.CreatedAt,
-			&authorID, &authorNickname, &authorAvatar, &authorBlog, &authorBio,
+			&authorID, &authorNickname, &authorAvatar, &authorBlog, &authorBio, &authorEmail,
 			&cwa.PageTitle); err != nil {
 			return nil, 0, fmt.Errorf("scan comment: %w", err)
 		}
@@ -1220,6 +1220,7 @@ func (s *SQLiteStore) GetAllComments(ctx context.Context, siteID string, limit, 
 			cwa.Author = &model.CommenterPublic{
 				ID: authorID.Int64, Nickname: authorNickname.String,
 				AvatarSeed: authorAvatar.String, BlogURL: authorBlog.String, Bio: authorBio.String,
+				Email: authorEmail.String, // admin-only endpoint (dashboard)
 			}
 		}
 		result = append(result, &cwa)
@@ -1259,6 +1260,33 @@ func (s *SQLiteStore) GetAllCommenters(ctx context.Context, limit, offset int) (
 		result = []*model.Commenter{}
 	}
 	return result, total, nil
+}
+
+// UpdateCommentContent edits a comment's content and status, restricted to
+// the comment's author. Returns the updated comment (or nil when the caller
+// is not the owner).
+func (s *SQLiteStore) UpdateCommentContent(ctx context.Context, id, commenterID int64, content, status string) (*model.Comment, error) {
+	now := time.Now().UTC().Format("2006-01-02 15:04:05")
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE comments SET content = ?, status = ? WHERE id = ? AND commenter_id = ?`,
+		content, status, id, commenterID)
+	if err != nil {
+		return nil, fmt.Errorf("update comment content: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, nil // not found or not the owner
+	}
+
+	var c model.Comment
+	err = s.db.QueryRowContext(ctx, `
+		SELECT id, site_id, page_slug, commenter_id, content, status, created_at
+		FROM comments WHERE id = ?`, id).
+		Scan(&c.ID, &c.SiteID, &c.PageSlug, &c.CommenterID, &c.Content, &c.Status, &c.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("reload comment: %w", err)
+	}
+	_ = now
+	return &c, nil
 }
 
 func (s *SQLiteStore) UpdateCommentStatus(ctx context.Context, id int64, status string) error {

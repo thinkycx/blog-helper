@@ -2235,6 +2235,18 @@
   var SHARE_PARA_GAP = 40;     // extra gap between quoted paragraphs
   var SHARE_MAX_LINES = 80;    // hard cap for extremely long selections
 
+  // Local time with timezone offset, e.g. "2026-10-04 00:30:15 UTC+8"
+  function shareTimestamp() {
+    var d = new Date();
+    function pad(n) { return (n < 10 ? "0" : "") + n; }
+    var off = -d.getTimezoneOffset();
+    var sign = off >= 0 ? "+" : "-";
+    var oh = Math.floor(Math.abs(off) / 60), om = Math.abs(off) % 60;
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " +
+      pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()) +
+      " UTC" + sign + oh + (om ? ":" + pad(om) : "");
+  }
+
   // Render the share card: quote (paragraph-aware, grows into a long image) +
   // post title + QR deep link + centered "@host" footer. Style driven by opts.
   function renderShareCard(quote, title, link, siteName, opts) {
@@ -2492,15 +2504,18 @@
     ctx.fillStyle = bgp.sub;
     ctx.fillText("长按识别二维码 · 定位到文章原位置", PAD, qrY + 92);
 
-    // centered "@host · share-time" footer (from the current site, never hardcoded)
+    // centered @host footer (from the current site, never hardcoded)
     ctx.font = "24px " + font.family;
     ctx.fillStyle = bgp.sub;
-    var _p2 = function (n) { return n < 10 ? "0" + n : "" + n; };
-    var _now = new Date();
-    var host = "@" + window.location.hostname + " · " +
-      _now.getFullYear() + "-" + _p2(_now.getMonth() + 1) + "-" + _p2(_now.getDate()) +
-      " " + _p2(_now.getHours()) + ":" + _p2(_now.getMinutes());
+    var host = "@" + window.location.hostname;
     ctx.fillText(host, (W - ctx.measureText(host).width) / 2, qrY + qrSize + 26);
+
+    // share timestamp, bottom-right with timezone offset (e.g. UTC+8)
+    ctx.font = "20px " + font.family;
+    ctx.fillStyle = bgp.sub;
+    ctx.textAlign = "right";
+    ctx.fillText(shareTimestamp(), W - PAD, qrY + qrSize + 30);
+    ctx.textAlign = "left";
 
     return canvas;
   }

@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- Share timestamp on cards: local time with timezone offset, bottom-right
+  (does not affect the centered @host footer)
 - Uniform 3:4 baseline aspect ratio for share cards: short quotes render as a
   standard 1080x1440 card (content top, footer pinned to bottom); long
   passages still grow into long images

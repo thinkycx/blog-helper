@@ -1141,20 +1141,14 @@
     var avatar = generateAvatar(a.avatar_seed || "?", avatarSize);
     var blogUrl = normalizeBlogUrl(a.blog_url);
 
-    // Unified tooltip: nickname · blog (line 1), bio (line 2)
-    var authorTooltip = '<div class="bh-author-tooltip">' +
-      '<div class="bh-author-tooltip-name">' + escapeHtml(a.nickname || "匿名") +
-        (blogUrl ? ' · <a href="' + escapeHtml(blogUrl) + '" target="_blank" rel="noopener">' + escapeHtml(blogUrl.replace(/^https?:\/\//, '')) + '</a>' : '') +
-      '</div>' +
-      (a.bio ? '<div class="bh-author-tooltip-bio">' + escapeHtml(a.bio) + '</div>' : '') +
-    '</div>';
-
+    // Click the avatar / author name to open the commenter card
+    // (showCommenterCard — full profile, email deliberately excluded)
     var isAdmin = a.id === 0;
     var adminBadge = isAdmin ? '<span class="bh-admin-badge">Author</span>' : '';
     var canEdit = !isAdmin && commentMap._me && a.id === commentMap._me.id;
     var authorName = blogUrl ?
-      '<a class="bh-comment-author" href="' + escapeHtml(blogUrl) + '" target="_blank" rel="noopener">' + escapeHtml(a.nickname || "匿名") + '</a>' + adminBadge :
-      '<span class="bh-comment-author">' + escapeHtml(a.nickname || "匿名") + '</span>' + adminBadge;
+      '<a class="bh-comment-author bh-cc-trigger" href="' + escapeHtml(blogUrl) + '" target="_blank" rel="noopener">' + escapeHtml(a.nickname || "匿名") + '</a>' + adminBadge :
+      '<span class="bh-comment-author bh-cc-trigger">' + escapeHtml(a.nickname || "匿名") + '</span>' + adminBadge;
 
     var replyRef = "";
     if (isReply && c.parent_id) {
@@ -1176,13 +1170,12 @@
 
     return '<div class="bh-comment-item' + (isReply ? ' bh-comment-reply' : '') + '" data-id="' + c.id + '" id="comment-' + c.id + '">' +
       '<span class="bh-comment-author-wrap">' +
-        '<img class="bh-comment-avatar" src="' + avatar + '" alt=""' +
+        '<img class="bh-comment-avatar bh-cc-trigger" src="' + avatar + '" alt=""' +
           ' style="width:' + avatarSize + 'px;height:' + avatarSize + 'px">' +
-        authorTooltip +
       '</span>' +
       '<div class="bh-comment-body">' +
         '<div class="bh-comment-header">' +
-          '<span class="bh-comment-author-wrap">' + authorName + authorTooltip + '</span>' +
+          '<span class="bh-comment-author-wrap">' + authorName + '</span>' +
           replyRef +
           '<span class="bh-comment-meta">' +
             '<span class="bh-comment-time">' + formatTime(c.created_at) + '</span>' +
@@ -1197,6 +1190,70 @@
         '</div>' +
       '</div>' +
     '</div>';
+  }
+
+  // Reaction buttons (shared by the bottom comment list and the anchor popover)
+  function bindReactionButtons(scope, state, config, commentMap) {
+    var btns = scope.querySelectorAll(".bh-reaction");
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].addEventListener("click", function () {
+        var btn = this;
+        var commentId = parseInt(btn.getAttribute("data-comment-id"));
+        var emoji = btn.getAttribute("data-emoji");
+        var isActive = btn.classList.contains("bh-reaction-active");
+        var action = isActive ? "remove" : "add";
+
+        // Optimistic UI update
+        var countEl = btn.querySelector(".bh-reaction-count");
+        var currentCount = countEl ? parseInt(countEl.textContent) : 0;
+        var newCount = action === "add" ? currentCount + 1 : Math.max(0, currentCount - 1);
+        if (newCount > 0) {
+          if (countEl) {
+            countEl.textContent = newCount;
+          } else {
+            var span = document.createElement("span");
+            span.className = "bh-reaction-count";
+            span.textContent = newCount;
+            btn.appendChild(document.createTextNode(" "));
+            btn.appendChild(span);
+          }
+        } else if (countEl) {
+          // Remove count span and preceding text node
+          if (countEl.previousSibling && countEl.previousSibling.nodeType === 3) {
+            countEl.previousSibling.remove();
+          }
+          countEl.remove();
+        }
+        btn.classList.toggle("bh-reaction-active");
+
+        // Also update state.comments for consistency
+        var comment = commentMap[commentId];
+        if (comment) {
+          if (!comment.reactions) comment.reactions = [];
+          if (!comment.my_reactions) comment.my_reactions = [];
+          var found = false;
+          for (var r = 0; r < comment.reactions.length; r++) {
+            if (comment.reactions[r].emoji === emoji) {
+              comment.reactions[r].count = newCount;
+              if (newCount === 0) comment.reactions.splice(r, 1);
+              found = true;
+              break;
+            }
+          }
+          if (!found && action === "add") {
+            comment.reactions.push({ emoji: emoji, count: 1 });
+          }
+          var idx = comment.my_reactions.indexOf(emoji);
+          if (action === "add" && idx === -1) comment.my_reactions.push(emoji);
+          if (action === "remove" && idx !== -1) comment.my_reactions.splice(idx, 1);
+        }
+
+        // Send to API
+        getFingerprint().then(function (fp) {
+          apiReact(config, commentId, emoji, fp, action);
+        });
+      });
+    }
   }
 
   function renderCommentList(section, state, config) {
@@ -1295,66 +1352,10 @@
     }
 
     // Bind reaction buttons
-    var reactionBtns = list.querySelectorAll(".bh-reaction");
-    for (var i = 0; i < reactionBtns.length; i++) {
-      reactionBtns[i].addEventListener("click", function () {
-        var btn = this;
-        var commentId = parseInt(btn.getAttribute("data-comment-id"));
-        var emoji = btn.getAttribute("data-emoji");
-        var isActive = btn.classList.contains("bh-reaction-active");
-        var action = isActive ? "remove" : "add";
+    bindReactionButtons(list, state, config, commentMap);
 
-        // Optimistic UI update
-        var countEl = btn.querySelector(".bh-reaction-count");
-        var currentCount = countEl ? parseInt(countEl.textContent) : 0;
-        var newCount = action === "add" ? currentCount + 1 : Math.max(0, currentCount - 1);
-        if (newCount > 0) {
-          if (countEl) {
-            countEl.textContent = newCount;
-          } else {
-            var span = document.createElement("span");
-            span.className = "bh-reaction-count";
-            span.textContent = newCount;
-            btn.appendChild(document.createTextNode(" "));
-            btn.appendChild(span);
-          }
-        } else if (countEl) {
-          // Remove count span and preceding text node
-          if (countEl.previousSibling && countEl.previousSibling.nodeType === 3) {
-            countEl.previousSibling.remove();
-          }
-          countEl.remove();
-        }
-        btn.classList.toggle("bh-reaction-active");
-
-        // Also update state.comments for consistency
-        var comment = commentMap[commentId];
-        if (comment) {
-          if (!comment.reactions) comment.reactions = [];
-          if (!comment.my_reactions) comment.my_reactions = [];
-          var found = false;
-          for (var r = 0; r < comment.reactions.length; r++) {
-            if (comment.reactions[r].emoji === emoji) {
-              comment.reactions[r].count = newCount;
-              if (newCount === 0) comment.reactions.splice(r, 1);
-              found = true;
-              break;
-            }
-          }
-          if (!found && action === "add") {
-            comment.reactions.push({ emoji: emoji, count: 1 });
-          }
-          var idx = comment.my_reactions.indexOf(emoji);
-          if (action === "add" && idx === -1) comment.my_reactions.push(emoji);
-          if (action === "remove" && idx !== -1) comment.my_reactions.splice(idx, 1);
-        }
-
-        // Send to API
-        getFingerprint().then(function (fp) {
-          apiReact(config, commentId, emoji, fp, action);
-        });
-      });
-    }
+    // Click avatar / author name → commenter card
+    bindCommenterCards(list, state, commentMap);
 
     // Bind inline-comment quote blocks — click to jump back to the highlighted text
     var quotes = list.querySelectorAll(".bh-quote");
@@ -1378,6 +1379,90 @@
 
     // Refresh inline highlights (comments may have changed)
     if (section._bhRefreshInline) section._bhRefreshInline();
+  }
+
+  // Commenter card — click the avatar / author name to open. Fixed-positioned
+  // next to the trigger with boundary awareness. Email is deliberately NOT
+  // shown (privacy); the card shows avatar, nickname, bio, blog and the
+  // author's comment count on this page.
+  var _ccCard = null;
+
+  function closeCommenterCard() {
+    if (!_ccCard) return;
+    if (_ccCard._bhCleanup) {
+      for (var i = 0; i < _ccCard._bhCleanup.length; i++) _ccCard._bhCleanup[i]();
+    }
+    if (_ccCard.parentNode) _ccCard.parentNode.removeChild(_ccCard);
+    _ccCard = null;
+  }
+
+  function showCommenterCard(comment, triggerEl, state) {
+    closeCommenterCard();
+    var a = comment.author || {};
+    var isAdmin = a.id === 0;
+    var count = 0;
+    var list = (state && state.comments) || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].author && list[i].author.id === a.id) count++;
+    }
+    var blogUrl = normalizeBlogUrl(a.blog_url);
+
+    var card = document.createElement("div");
+    card.className = "bh-cc-card";
+    card.innerHTML =
+      '<div class="bh-cc-head">' +
+        '<img class="bh-cc-avatar" src="' + generateAvatar(a.avatar_seed || a.nickname || "?", 56) + '" alt="">' +
+        '<div class="bh-cc-id">' +
+          '<div class="bh-cc-name">' + escapeHtml(a.nickname || "匿名") +
+            (isAdmin ? ' <span class="bh-admin-badge">Author</span>' : '') + '</div>' +
+          (a.bio ? '<div class="bh-cc-bio">' + escapeHtml(a.bio) + '</div>' : '') +
+        '</div>' +
+      '</div>' +
+      (blogUrl ? '<a class="bh-cc-blog" href="' + escapeHtml(blogUrl) + '" target="_blank" rel="noopener">' +
+        escapeHtml(blogUrl.replace(/^https?:\/\//, "")) + '</a>' : '') +
+      '<div class="bh-cc-meta">本页评论 ' + count + ' 条</div>';
+    document.body.appendChild(card);
+    _ccCard = card;
+
+    // position: below the trigger, boundary-aware (flip above / clamp left)
+    var r = triggerEl.getBoundingClientRect();
+    card.style.visibility = "hidden";
+    card.style.display = "";
+    var pw = card.offsetWidth, ph = card.offsetHeight;
+    var left = r.left;
+    if (left + pw > window.innerWidth - 8) left = Math.max(8, r.right - pw);
+    var top = r.bottom + 10;
+    if (top + ph > window.innerHeight - 8) top = Math.max(8, r.top - ph - 10);
+    card.style.left = left + "px";
+    card.style.top = top + "px";
+    card.style.visibility = "";
+
+    // close on Esc / outside click / scroll
+    var onKey = function (e) { if (e.key === "Escape") closeCommenterCard(); };
+    var onDown = function (e) { if (!card.contains(e.target)) closeCommenterCard(); };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown, true);
+    card._bhCleanup = [
+      function () { document.removeEventListener("keydown", onKey); },
+      function () { document.removeEventListener("mousedown", onDown, true); },
+    ];
+  }
+
+  // Click delegation for avatar / author name (comment list + anchor popover)
+  function bindCommenterCards(scope, state, commentMap) {
+    if (scope._ccBound) return;
+    scope._ccBound = true;
+    scope.addEventListener("click", function (e) {
+      var trig = e.target && e.target.closest ? e.target.closest(".bh-cc-trigger") : null;
+      if (!trig) return;
+      var item = trig.closest(".bh-comment-item");
+      if (!item) return;
+      var id = parseInt(item.getAttribute("data-id"));
+      var comment = commentMap ? commentMap[id] : null;
+      if (!comment) return;
+      e.preventDefault();
+      showCommenterCard(comment, trig, state);
+    });
   }
 
   // Inline editor for one's own comment: swaps the rendered content for a
@@ -2952,6 +3037,10 @@
           startCommentEdit(section, state, config, id, box);
         });
       }
+      // reactions work inside the popover too
+      bindReactionButtons(box, state, config, commentMap);
+      // avatar / author name cards inside the popover
+      bindCommenterCards(box, state, commentMap);
     }
 
     function showPopoverForm() {

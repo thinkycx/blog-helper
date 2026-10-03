@@ -2219,6 +2219,9 @@
   function loadShareOpts() {
     try {
       var o = JSON.parse(localStorage.getItem("bh-share-opts") || "{}");
+      // Migrate the pre-serif default: a stored "sans" font was almost always
+      // the old default riding along when another option was changed.
+      if (o.font === "sans") o.font = "serif";
       if (SHARE_STYLES[o.theme] && SHARE_FONTS[o.font] && SHARE_BGS[o.bg]) return o;
     } catch (e) { /* fall through */ }
     return { theme: "plain", font: "serif", bg: "white" };
